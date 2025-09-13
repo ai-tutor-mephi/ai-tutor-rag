@@ -6,6 +6,11 @@ __pycache__/
 .ipynb_checkpoints
 .DS_Store
 
+neo4j_data/
+qdrant_data/
+**/*.log
+**/*.db
+**/*.bin
 
 # C extensions
 *.so
