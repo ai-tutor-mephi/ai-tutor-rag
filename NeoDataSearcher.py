@@ -210,6 +210,17 @@ async def graph_context_from_chunks(
     edge_limit: int = 1000,
     context_lines_limit: int = 1000
 ) -> dict[str, any]:
+    """
+    Выделяет сущности из чанков, по ним ищет части графа и формирует контекст
+    :param chunks:
+    :param doc_id:
+    :param driver:
+    :param k_hops:
+    :param node_limit:
+    :param edge_limit:
+    :param context_lines_limit:
+    :return:
+    """
     # 3.1 выделяем имена
     names = await extract_entities_names(chunks)
     if not names:

@@ -31,7 +31,7 @@ def load(data: json):
     # загружаем в neo4j
     create_graph(chunks)
 
-    # return 200
+    return {"status": "200"}
 
 
 
