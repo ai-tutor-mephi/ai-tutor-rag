@@ -5,7 +5,7 @@ from QDataLoader import load_in_qdrant
 from NeoDataLoader import create_graph
 from QDataSearcher import extract_aspects_from_question, dense_search
 from NeoDataSearcher import graph_context_from_chunks
-from LLMAnswer import answer_with_graph
+from LLMAnswer import answer_with_graph, rewrite_question_from_dialogue
 
 app = fastapi.FastAPI()
 
@@ -41,13 +41,16 @@ def load(data: json):
 def query(data: json):
     data = json.loads(data)
     """
-    data: {text: str, doc_id: str}
+    data: {text: str, doc_id: str, dialogue: str}
     """
+
+    # перефразируем запрос на основе диалога
+    question = rewrite_question_from_dialogue(data["text"], data["dialogue"])
 
     aspects = [] # список словарей, где каждый словарь - аспект с метаданными
 
     # выделяем аспекты из запроса
-    aspects_text = extract_aspects_from_question(data["text"])
+    aspects_text = extract_aspects_from_question(question)
     for aspect in aspects_text:
         aspects.append({"text": aspect, "doc_id": data["doc_id"]})
 
@@ -71,7 +74,7 @@ def query(data: json):
         context += graph_context_from_chunks(chunks, data["doc_id"])
 
     # по контексту делаем запрос в LLM
-    answer = answer_with_graph(data["text"], context)
+    answer = answer_with_graph(question, context)
 
     ### Еще можно сделать формирование id ответа и потом id ответа тоже передавать
 

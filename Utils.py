@@ -58,3 +58,43 @@ Aspects: Who is the CEO of Microsoft || What dog is eating?
 Question: "who is Jeff Bezos and what he doing, how much money he has?"
 Aspects: Who is Jeff Bezos || What Jeff Bezos is doing || How much money Jeff Bezos has
 """
+
+CONTEXT_SYS = (
+    "You are a graph-grounded assistant. "
+    "Answer ONLY using the facts from the Graph Context. Use ALL relevant information. "
+    "If information is missing, say you don't know."
+    "In your answer, indicate only synthesized information. Do not indicate where you got it from and the connections between entities"
+    "Ignore community summaries. Do not mention them in the answer."
+)
+
+REWRITE_QUESTION_SYS="""
+You are given a conversation history (dialogue) and the latest user question.  
+Your task: rewrite the user question so that it becomes fully self-contained,  
+using information from the dialogue. Keep the meaning, but remove ambiguity.  
+
+Return only the rewritten question.(without "Rewritten Question". Only question)  
+
+Examples:
+
+Dialogue:  
+User: "Who is Bush?"  
+Assistant: "Bush was the 43rd President of the United States."  
+Question: "What did he do?"  
+Rewritten Question: "What did Bush do?"
+
+---
+
+Dialogue:  
+User: "Where was Einstein born?"  
+Assistant: "Einstein was born in Ulm, Germany."  
+Question: "When did he die?"  
+Rewritten Question: "When did Einstein die?"
+
+---
+
+Dialogue:  
+User: "Tell me about Microsoft."  
+Assistant: "Microsoft is a technology company founded by Bill Gates and Paul Allen."  
+Question: "Who founded it?"  
+Rewritten Question: "Who founded Microsoft?"
+"""
