@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 
 from ms_graphrag_neo4j import MsGraphRAG
 from neo4j import GraphDatabase
-
+from openai import OpenAI
+from Utils import CONTEXT_SYS, REWRITE_QUESTION_SYS
 
 load_dotenv()
 # model = os.getenv("MS_GRAPHRAG_MODEL")
@@ -24,18 +25,12 @@ async def answer_with_graph(
     )
     ms = MsGraphRAG(driver=driver, model=os.getenv(ms_model_env_var, "openai/gpt-oss-20b"))
 
-    sys_prompt = (
-        "You are a graph-grounded assistant. "
-        "Answer ONLY using the facts from the Graph Context. Use ALL relevant information. "
-        "If information is missing, say you don't know."
-        "In your answer, indicate only synthesized information. Do not indicate where you got it from and the connections between entities"
-        "Ignore community summaries. Do not mention them in the answer."
-    )
+
     user_prompt = f"Question: {question}\n\nGraph Context:\n{graph_context_text}"
 
     try:
         resp = await ms.achat(
-            messages=[{"role": "system", "content": sys_prompt},
+            messages=[{"role": "system", "content": CONTEXT_SYS},
                       {"role": "user", "content": user_prompt}],
             model=os.getenv(ms_model_env_var)
         )
@@ -44,6 +39,23 @@ async def answer_with_graph(
     finally:
         ms.close()
         driver.close()
+
+def rewrite_question_from_dialogue(question: str, dialogue:str) -> str:
+    """
+    Перефразирует вопрос на основе всего диалога
+    :param question:
+    :param dialogue:
+    :return:
+    """
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_API_BASE_URL"))
+    resp = client.chat.completions.create(
+        model=os.getenv("MS_LIGHT_MODEL"),
+        messages=[
+            {"role": "system", "content": REWRITE_QUESTION_SYS},
+            {"role": "user", "content": f"Dialogue: {dialogue}\nQuestion: {question}"}
+        ]
+    )
+    return resp.choices[0].message.content
 
 if __name__ == "__main__":
     import asyncio
