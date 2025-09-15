@@ -1,4 +1,5 @@
 import fastapi
+from fastapi.responses import JSONResponse
 import json
 from Embedder import embed
 from QDataLoader import load_in_qdrant
@@ -12,28 +13,34 @@ app = fastapi.FastAPI()
 # Загрузить документ в сервис
 @app.post("/load")
 def load(data: json):
-    data = json.loads(data)
-    """
-    data: {chunks: чанки list[dict[str]], doc_id: str}
-    {text: str} - чанк до обработки
-    """
+    try:
+        data = json.loads(data)
+    except Exception as e:
+        return JSONResponse(content={'message': f'Не удалось сохранить файл\n{e}'}, status_code=400)
 
-    # векторизуем чанки и добавляем вектор, doc_id в метаданные
-    for chunk in data["chunks"]:
-        chunk["dense_vector"] = embed(chunk["text"])
-        chunk["doc_id"] = data["doc_id"]
+    try:
+        """
+        data: {chunks: чанки list[dict[str]], doc_id: str}
+        {text: str} - чанк до обработки
+        """
 
-    chunks = data["chunks"]
+        # векторизуем чанки и добавляем вектор, doc_id в метаданные
+        for chunk in data["chunks"]:
+            chunk["dense_vector"] = embed(chunk["text"])
+            chunk["doc_id"] = data["doc_id"]
 
-    # загружаем в qdrant
-    load_in_qdrant(chunks)
+        chunks = data["chunks"]
 
-    # загружаем в neo4j
-    create_graph(chunks)
+        # загружаем в qdrant
+        load_in_qdrant(chunks)
 
-    return {"status": "200"}
+        # загружаем в neo4j
+        create_graph(chunks)
 
+        return JSONResponse(content={'message':'OK'}, status_code=200)
 
+    except Exception as e:
+        return JSONResponse(content={'message': f'Bad Request\n{e}'}, status_code=500)
 
 
 # Получить ответ от сервиса по запросу
