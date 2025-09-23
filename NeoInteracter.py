@@ -1,0 +1,311 @@
+# для каждого чанка, загруженного в qdrant и neo4j надо одинаковый чтобы в обоих БД у него был одинаковый id
+
+import os
+from dotenv import load_dotenv
+
+from ms_graphrag_neo4j import MsGraphRAG
+from neo4j import GraphDatabase
+
+import json
+from typing import Optional
+
+
+
+from Utils import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
+from Prompts import ENTITY_SYS
+
+
+load_dotenv()
+
+api_key = os.getenv("OPENAI_API_KEY")
+neo4j_uri = os.getenv("NEO4J_URI")
+neo4j_user = os.getenv("NEO4J_USERNAME")
+neo4j_password = os.getenv("NEO4J_PASSWORD")
+
+model = os.getenv("MS_GRAPHRAG_MODEL")
+light_model = os.getenv("MS_LIGHT_MODEL")
+
+database = os.getenv("NEO4J_DATABASE", "neo4j")
+
+# Connect to Neo4j
+driver = GraphDatabase.driver(
+    neo4j_uri,
+    auth=(neo4j_user, neo4j_password)
+)
+
+# Initialize MsGraphRAG
+ms_graph = MsGraphRAG(driver=driver, model=model)
+
+
+class NeoInteracter:
+    def __init__(self, driver=driver, ms_graph=ms_graph, model=model, light_model=light_model, database=database):
+        self.driver = driver
+        self.ms_graph = ms_graph
+        self.model = model
+        self.light_model = light_model
+        self.database = database
+
+    def __del__(self):
+        self.ms_graph.close()
+        self.driver.close()
+
+    async def create_graph(self, chunks: list[dict]) -> None:
+    
+        """
+        Connect to Neo4j and create a graph from the given data.
+        :param chunks: chunks to be added to the graph
+        :param ms_graph: MsGraphRAG instance
+        :param driver: Neo4j driver
+        :return:
+        """
+
+        data = [d.get("text") for d in chunks]
+
+        try:
+            # Extract entities and relationships
+            result = await ms_graph.extract_nodes_and_rels(data, [])
+            print(result)
+
+            # Generate summaries for nodes and relationships
+            result = await ms_graph.summarize_nodes_and_rels()
+            print(result)
+
+            # Identify and summarize communities
+            result = await ms_graph.summarize_communities()
+            print(result)
+
+            doc_id = chunks[0].get("doc_id")
+
+            # Проставить doc_id всем новым нодам и рёбрам
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (n)
+                    WHERE NOT EXISTS(n.doc_id)
+                    SET n.doc_id = $doc_id
+                    """,
+                    doc_id=doc_id
+                )
+                session.run(
+                    """
+                    MATCH ()-[r]-()
+                    WHERE NOT EXISTS(r.doc_id)
+                    SET r.doc_id = $doc_id
+                    """,
+                    doc_id=doc_id
+                )
+
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    @staticmethod
+    def dedup_keep_order(items: list[str]) -> list[str]:
+        seen, out = set(), []
+        for x in items:
+            x = x.strip()
+            if x and x not in seen:
+                seen.add(x); out.append(x)
+        return out
+
+    @staticmethod
+    async def extract_entities_names(chunks: list[str] | str, ms, light_model) -> list[str]:
+        """
+        Extract entity names from the qdrant's chunks
+        :param chunks:
+        :return: entities
+        """
+        if isinstance(chunks, str):
+            chunks = [chunks]
+
+
+        ent_resp = await ms.achat(
+            messages=[{"role": "system", "content": ENTITY_SYS},
+                    {"role": "user", "content": " ".join(chunks)}],
+            model=light_model
+        )
+        try:
+            ents = json.loads(ent_resp.choices[0].message.content).get("entities", [])
+            names = [e.get("name", "").strip() for e in ents if e.get("name")]
+            return NeoInteracter.dedup_keep_order(names)
+        except Exception:
+            # попробуем из текста хоть что-то искать
+            return NeoInteracter.dedup_keep_order(chunks)
+
+            
+    @staticmethod
+    def _extract_data_from_graph(
+        driver,
+        names: list[str],
+        doc_id: str,
+        *,
+        node_limit: int,
+        edge_limit: int,
+        k_hops: int = 1,
+        database: str | None = None
+    ) -> dict[str, any]:
+        if not names:
+            return {"centers": [], "edges": [], "communities": [], "context_text": ""}
+
+        # 2.1 найдём подходящие узлы по любому читаемому полю
+        with driver.session(database=database) as s:
+            nodes_res = s.run(
+                FIND_NODES,
+                {"names": names, "node_limit": node_limit, "doc_id": doc_id}
+            ).data()
+
+            if not nodes_res:
+                return {"centers": [], "edges": [], "communities": [], "context_text": ""}
+
+            node_ids = [r["id"] for r in nodes_res]
+
+            # 2.2 один хоп окружения (хочешь 2 — добавь ещё OPTIONAL MATCH)
+            ctx = s.run(
+                FIND_CONTEXT,
+                {"ids": node_ids, "edge_limit": edge_limit, "doc_id": doc_id}
+            ).data()
+
+            # 2.3 (опционально) комьюнити
+            comm = s.run(
+                FIND_COMMUNITIES,
+                {"ids": node_ids, "doc_id": doc_id}
+            ).data()
+
+        result = NeoInteracter._assemble_context(ctx, comm, char_limit=None, include_nodes_without_summary=False)
+        return result
+
+    @staticmethod
+    def _assemble_context(
+        ctx: list[dict[str, any]],
+        comm: list[dict[str, any]],
+        *,
+        char_limit: Optional[int] = None,
+        include_nodes_without_summary: bool = False
+    ) -> dict[str, any]:
+        """
+        Из результатов графовых запросов (ctx, comm) собирает:
+        - centers: уникальные центры с метками и summary
+        - edges: список рёбер с соседями и summary
+        - communities: список комьюнити
+        - context_text: компактный текстовый контекст (опционально урезается по символам)
+
+        ctx ожидается в формате строк запроса:
+        center, center_labels, center_summary, rel, rel_summary, neighbor, neighbor_labels, neighbor_summary
+        comm ожидается в формате:
+        id, level, summary
+        """
+        lines: list[str] = []
+
+        # --- центры ---
+        centers: dict[str, dict[str, any]] = {}
+        for row in ctx:
+            c = row.get("center")
+            if not c or c in centers:
+                continue
+            centers[c] = {
+                "labels": row.get("center_labels") or [],
+                "summary": row.get("center_summary"),
+            }
+
+        # В текст добавляем центр только если есть summary (или если явно разрешено)
+        for name, data in centers.items():
+            if data.get("summary") or include_nodes_without_summary:
+                line = f"[NODE] {name}"
+                if data.get("summary"):
+                    line += f" :: {data['summary']}"
+                lines.append(line)
+
+        # --- рёбра ---
+        edges: list[dict[str, any]] = []
+        for row in ctx:
+            center, rel, neighbor = row.get("center"), row.get("rel"), row.get("neighbor")
+            if not center or not rel or not neighbor:
+                continue
+
+            edges.append({
+                "center": center,
+                "rel": rel,
+                "neighbor": neighbor,
+                "rel_summary": row.get("rel_summary"),
+                "neighbor_labels": row.get("neighbor_labels") or [],
+                "neighbor_summary": row.get("neighbor_summary"),
+            })
+
+            edge_line = f"[EDGE] {center} -[{rel}]-> {neighbor}"
+            if row.get("rel_summary"):
+                edge_line += f" :: {row['rel_summary']}"
+            if row.get("neighbor_summary"):
+                edge_line += f" | neighbor_summary: {row['neighbor_summary']}"
+            lines.append(edge_line)
+
+        # --- комьюнити ---
+        communities: list[dict[str, any]] = []
+        for c in comm:
+            item = {
+                "id": c.get("id"),
+                "level": c.get("level"),
+                "summary": c.get("summary"),
+            }
+            communities.append(item)
+            if item.get("summary"):
+                lines.append(f"[COMMUNITY L{item['level']} #{item['id']}] {item['summary']}")
+
+        # --- текст ---
+        context_text = "\n".join(lines)
+        if char_limit is not None and len(context_text) > char_limit:
+            context_text = context_text[:char_limit]
+
+        return {
+            "centers": [{"name": k, **v} for k, v in centers.items()],
+            "edges": edges,
+            "communities": communities,
+            "context_text": context_text,
+        }
+
+    async def graph_context_from_chunks(
+        self,
+        chunks: list[str],
+        doc_id: str,
+        *,
+        k_hops: int = 1,
+        node_limit: int = 50,
+        edge_limit: int = 1000,
+        context_lines_limit: int = 1000
+    ) -> dict[str, any]:
+        """
+        Выделяет сущности из чанков, по ним ищет части графа и формирует контекст
+        :param chunks:
+        :param doc_id:
+        :param driver:
+        :param k_hops:
+        :param node_limit:
+        :param edge_limit:
+        :param context_lines_limit:
+        :return:
+        """
+        # 3.1 выделяем имена
+        names = await self.extract_entities_names(chunks, ms=self.ms_graph, light_model=self.light_model)
+        if not names:
+            return {"centers": [], "edges": [], "communities": [], "context_text": ""}
+
+        # 3.2 подключаемся к нужной БД
+
+        try:
+            result = NeoInteracter._extract_data_from_graph(
+                self.driver,
+                names,
+                doc_id,
+                node_limit=node_limit,
+                edge_limit=edge_limit,
+                k_hops=k_hops,
+                database=database
+            )
+            # подрежем текст если очень длинный
+            if len(result.get("context_text","")) > context_lines_limit:
+                result["context_text"] = result["context_text"][:context_lines_limit]
+            return result
+        except Exception as e:
+            return None # подумать над выводом из классов
+        
+

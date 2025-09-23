@@ -4,7 +4,7 @@ import os
 import dotenv
 
 from openai import OpenAI
-from Utils import ASPECTS_SYS
+from Prompts import ASPECTS_SYS
 
 dotenv.load_dotenv()
 
