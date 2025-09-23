@@ -13,7 +13,8 @@ from typing import Optional
 
 
 
-from Utils import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES, ENTITY_SYS
+from Utils import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
+from Prompts import ENTITY_SYS
 
 
 load_dotenv()
