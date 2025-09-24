@@ -14,6 +14,16 @@ from typing import Optional
 from Utils import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
 from Prompts import ENTITY_SYS
 
+import asyncio
+
+import logging
+
+logging.basicConfig(level=logging.INFO,
+                    filename="Logs/neo.log",
+                    filemode="a",
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+                    
+
 
 load_dotenv()
 
@@ -63,14 +73,18 @@ class NeoInteracter:
 
         try:
             # Extract entities and relationships
+            logging.info("Извлечение сущностей и связей...")
             result = await ms_graph.extract_nodes_and_rels(data, [])
+            logging.info(f"Сущности и связи извлечены {result}")
             print(result)
 
             # Generate summaries for nodes and relationships
+            logging.info("Генерация резюме для сущностей и связей...")
             result = await ms_graph.summarize_nodes_and_rels()
             print(result)
 
             # Identify and summarize communities
+            logging.info("Выделение и суммаризация комьюнити...")
             result = await ms_graph.summarize_communities()
             print(result)
 
@@ -98,6 +112,7 @@ class NeoInteracter:
 
         except Exception:
             import traceback
+            logging.error("Ошибка при создании графа в neo4j")
             traceback.print_exc()
 
     @staticmethod
@@ -119,23 +134,26 @@ class NeoInteracter:
         if isinstance(chunks, str):
             chunks = [chunks]
 
-
+        logging.info("Вызов модели для извлечения сущностей...")
         ent_resp = await ms.achat(
             messages=[{"role": "system", "content": ENTITY_SYS},
                     {"role": "user", "content": " ".join(chunks)}],
             model=light_model
         )
+        logging.info(f"Ответ модели для извлечения сущностей: {ent_resp}")
+
         try:
             ents = json.loads(ent_resp.choices[0].message.content).get("entities", [])
             names = [e.get("name", "").strip() for e in ents if e.get("name")]
-            return NeoInteracter.dedup_keep_order(names)
+            return asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
         except Exception:
             # попробуем из текста хоть что-то искать
-            return NeoInteracter.dedup_keep_order(chunks)
+            logging.error("Ошибка при разборе ответа модели для извлечения сущностей")
+            return asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
 
             
     @staticmethod
-    def _extract_data_from_graph(
+    async def _extract_data_from_graph(
         driver,
         names: list[str],
         doc_id: str,
@@ -172,7 +190,7 @@ class NeoInteracter:
                 {"ids": node_ids, "doc_id": doc_id}
             ).data()
 
-        result = NeoInteracter._assemble_context(ctx, comm, char_limit=None, include_nodes_without_summary=False)
+        result = asyncio.to_thread(NeoInteracter._assemble_context, ctx, comm, char_limit=None, include_nodes_without_summary=False)
         return result
 
     @staticmethod
@@ -292,7 +310,7 @@ class NeoInteracter:
         # 3.2 подключаемся к нужной БД
 
         try:
-            result = NeoInteracter._extract_data_from_graph(
+            result = await NeoInteracter._extract_data_from_graph(
                 self.driver,
                 names,
                 doc_id,

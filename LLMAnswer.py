@@ -6,6 +6,15 @@ from neo4j import GraphDatabase
 from openai import OpenAI
 from Prompts import CONTEXT_SYS, REWRITE_QUESTION_SYS
 
+import logging
+
+logging.basicConfig(level=logging.INFO,
+                    filename="Logs/llm.log",
+                    filemode="a",
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+                    
+
+
 load_dotenv()
 model = os.getenv("MS_GRAPHRAG_MODEL")
 light_model=os.getenv("MS_LIGHT_MODEL")
@@ -42,24 +51,27 @@ class LLM:
 
         user_prompt = f"Question: {question}\n\nGraph Context:\n{graph_context_text}"
 
-
+        logging.info(f"Обращаемся с промптом: {user_prompt}\n к модели {self.model}")
         resp = await self.ms.achat(
             messages=[{"role": "system", "content": CONTEXT_SYS},
                     {"role": "user", "content": user_prompt}],
             model=self.model
         )
         answer = resp.content
+        logging.info(f"Ответ модели: {answer}")
         return answer
 
 
 
-    def rewrite_question_from_dialogue(self, question: str, dialogue:str) -> str:
+    async def rewrite_question_from_dialogue(self, question: str, dialogue:str) -> str:
         """
         Перефразирует вопрос на основе всего диалога
         :param question:
         :param dialogue:
         :return:
         """
+
+        logging.info(f"Перефразируем вопрос: {question}\n на основе диалога: {dialogue}\n модель: {self.light_model}")
         resp = self.client.chat.completions.create(
             model=self.light_model,
             messages=[
@@ -67,7 +79,10 @@ class LLM:
                 {"role": "user", "content": f"Dialogue: {dialogue}\nQuestion: {question}"}
             ]
         )
-        return resp.choices[0].message.content
+        answer = resp.choices[0].message.content
+
+        logging.info(f"Перефразированный вопрос: {answer}")
+        return answer
 
 
 if __name__ == "__main__":
