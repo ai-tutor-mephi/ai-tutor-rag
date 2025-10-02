@@ -7,13 +7,27 @@ from openai import OpenAI
 from Prompts import CONTEXT_SYS, REWRITE_QUESTION_SYS
 
 import logging
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO,
-                    filename="Logs/llm.log",
-                    filemode="a",
-                    format="%(asctime)s [%(levelname)s] %(message)s")
-                    
+# путь к директории с текущим файлом
+base_dir = Path(__file__).resolve().parent
 
+# подняться на n директорий вверх
+root_dir = base_dir.parents[1]
+
+# путь к Logs
+logs_dir = root_dir / "Logs"
+logs_dir.mkdir(parents=True, exist_ok=True)  # создаём папку, если её нет
+
+# сам лог-файл
+log_file = logs_dir / "LLM.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    filename=log_file,
+    filemode="a", 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 load_dotenv()
 model = os.getenv("MS_GRAPHRAG_MODEL")
@@ -32,7 +46,7 @@ class LLM:
         self.model=model
         self.light_model=light_model
         self.driver=driver
-        self.ms=ms,
+        self.ms=ms
         self.client=client
 
     def __del__(self):

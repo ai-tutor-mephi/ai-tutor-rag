@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   qdrant:
     image: qdrant/qdrant:latest
@@ -13,11 +11,12 @@ services:
       QDRANT_URL: ${QDRANT_URL}
     volumes:
       - ./qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 2s
-      retries: 30
+#    healthcheck: # не работает
+#      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 30
+
 
 
 
@@ -42,18 +41,20 @@ services:
       - ./neo4j_import:/var/lib/neo4j/import
 
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u \"$NEO4J_USERNAME\" -p \"$NEO4J_PASSWORD\" 'RETURN 1' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 30
 
   app:
-    build: ./app            
-    container_name: app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag
     restart: unless-stopped
     depends_on:
-      qdrant:
-        condition: service_healthy
+#      qdrant:
+#        condition: service_healthy
       neo4j:
         condition: service_healthy
     environment:

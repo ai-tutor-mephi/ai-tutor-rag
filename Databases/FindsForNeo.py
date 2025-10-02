@@ -1,7 +1,7 @@
 FIND_NODES = """
 UNWIND $names AS q
 MATCH (n)
-WHERE n.doc_id = $doc_id
+WHERE n.dialog_id = $dialog_id
 WITH q, n, [
   n.name, n.title, n.text, n.summary
 ] AS fields
@@ -14,8 +14,8 @@ LIMIT $node_limit
 
 FIND_CONTEXT = """
 MATCH (n)
-WHERE elementId(n) IN $ids AND n.doc_id = $doc_id
-OPTIONAL MATCH (n)-[r {doc_id: $doc_id}]-(m {doc_id: $doc_id})
+WHERE elementId(n) IN $ids AND n.dialog_id = $dialog_id
+OPTIONAL MATCH (n)-[r {dialog_id: $dialog_id}]-(m {dialog_id: $dialog_id})
 RETURN coalesce(n.name, n.title, n.text, "") AS center,
        labels(n) AS center_labels,
        n.summary AS center_summary,
@@ -29,9 +29,9 @@ LIMIT $edge_limit
 
 FIND_COMMUNITIES = """
 MATCH (n)
-WHERE elementId(n) IN $ids AND n.doc_id = $doc_id
+WHERE elementId(n) IN $ids AND n.dialog_id = $dialog_id
 OPTIONAL MATCH (n)-[:IN_COMMUNITY]->(c)
-WHERE c.doc_id = $doc_id
+WHERE c.dialog_id = $dialog_id
 WITH DISTINCT c WHERE c IS NOT NULL
 RETURN elementId(c) AS id,
        c.level      AS level,
