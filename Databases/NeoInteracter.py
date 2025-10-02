@@ -9,19 +9,33 @@ from neo4j import GraphDatabase
 import json
 from typing import Optional
 
-
-
-from Utils import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
-from Prompts import ENTITY_SYS
+from FindsForNeo import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
+from ..LLM.Prompts import ENTITY_SYS
 
 import asyncio
 
 import logging
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO,
-                    filename="Logs/neo.log",
-                    filemode="a",
-                    format="%(asctime)s [%(levelname)s] %(message)s")
+# путь к директории с текущим файлом
+base_dir = Path(__file__).resolve().parent
+
+# подняться на n директорий вверх
+root_dir = base_dir.parents[1]
+
+# путь к Logs
+logs_dir = root_dir / "Logs"
+logs_dir.mkdir(parents=True, exist_ok=True)  # создаём папку, если её нет
+
+# сам лог-файл
+log_file = logs_dir / "neo.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    filename=log_file,
+    filemode="a", 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
                     
 
 
@@ -64,8 +78,6 @@ class NeoInteracter:
         """
         Connect to Neo4j and create a graph from the given data.
         :param chunks: chunks to be added to the graph
-        :param ms_graph: MsGraphRAG instance
-        :param driver: Neo4j driver
         :return:
         """
 
@@ -74,39 +86,39 @@ class NeoInteracter:
         try:
             # Extract entities and relationships
             logging.info("Извлечение сущностей и связей...")
-            result = await ms_graph.extract_nodes_and_rels(data, [])
+            result = await self.ms_graph.extract_nodes_and_rels(data, [])
             logging.info(f"Сущности и связи извлечены {result}")
             print(result)
 
             # Generate summaries for nodes and relationships
             logging.info("Генерация резюме для сущностей и связей...")
-            result = await ms_graph.summarize_nodes_and_rels()
+            result = await self.ms_graph.summarize_nodes_and_rels()
             print(result)
 
             # Identify and summarize communities
             logging.info("Выделение и суммаризация комьюнити...")
-            result = await ms_graph.summarize_communities()
+            result = await self.ms_graph.summarize_communities()
             print(result)
 
-            doc_id = chunks[0].get("doc_id")
+            dialog_id = chunks[0].get("dialog_id")
 
-            # Проставить doc_id всем новым нодам и рёбрам
-            with driver.session() as session:
+            # Проставить dialog_id всем новым нодам и рёбрам
+            with self.driver.session() as session:
                 session.run(
                     """
                     MATCH (n)
-                    WHERE NOT EXISTS(n.doc_id)
-                    SET n.doc_id = $doc_id
+                    WHERE NOT EXISTS(n.dialog_id)
+                    SET n.dialog_id = $dialog_id
                     """,
-                    doc_id=doc_id
+                    dialog_id=dialog_id
                 )
                 session.run(
                     """
                     MATCH ()-[r]-()
-                    WHERE NOT EXISTS(r.doc_id)
-                    SET r.doc_id = $doc_id
+                    WHERE NOT EXISTS(r.dialog_id)
+                    SET r.dialog_id = $dialog_id
                     """,
-                    doc_id=doc_id
+                    dialog_id=dialog_id
                 )
 
 
@@ -143,20 +155,20 @@ class NeoInteracter:
         logging.info(f"Ответ модели для извлечения сущностей: {ent_resp}")
 
         try:
-            ents = json.loads(ent_resp.choices[0].message.content).get("entities", [])
+            ents = json.loads(ent_resp.content).get("entities", [])
             names = [e.get("name", "").strip() for e in ents if e.get("name")]
-            return asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
+            return await asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
         except Exception:
             # попробуем из текста хоть что-то искать
             logging.error("Ошибка при разборе ответа модели для извлечения сущностей")
-            return asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
+            return await asyncio.to_thread(NeoInteracter.dedup_keep_order, chunks)
 
             
     @staticmethod
     async def _extract_data_from_graph(
         driver,
         names: list[str],
-        doc_id: str,
+        dialog_id: str,
         *,
         node_limit: int,
         edge_limit: int,
@@ -170,7 +182,7 @@ class NeoInteracter:
         with driver.session(database=database) as s:
             nodes_res = s.run(
                 FIND_NODES,
-                {"names": names, "node_limit": node_limit, "doc_id": doc_id}
+                {"names": names, "node_limit": node_limit, "dialog_id": dialog_id}
             ).data()
 
             if not nodes_res:
@@ -181,13 +193,13 @@ class NeoInteracter:
             # 2.2 один хоп окружения (хочешь 2 — добавь ещё OPTIONAL MATCH)
             ctx = s.run(
                 FIND_CONTEXT,
-                {"ids": node_ids, "edge_limit": edge_limit, "doc_id": doc_id}
+                {"ids": node_ids, "edge_limit": edge_limit, "dialog_id": dialog_id}
             ).data()
 
             # 2.3 (опционально) комьюнити
             comm = s.run(
                 FIND_COMMUNITIES,
-                {"ids": node_ids, "doc_id": doc_id}
+                {"ids": node_ids, "dialog_id": dialog_id}
             ).data()
 
         result = asyncio.to_thread(NeoInteracter._assemble_context, ctx, comm, char_limit=None, include_nodes_without_summary=False)
@@ -284,7 +296,7 @@ class NeoInteracter:
     async def graph_context_from_chunks(
         self,
         chunks: list[str],
-        doc_id: str,
+        dialog_id: str,
         *,
         k_hops: int = 1,
         node_limit: int = 50,
@@ -294,8 +306,7 @@ class NeoInteracter:
         """
         Выделяет сущности из чанков, по ним ищет части графа и формирует контекст
         :param chunks:
-        :param doc_id:
-        :param driver:
+        :param dialog_id:
         :param k_hops:
         :param node_limit:
         :param edge_limit:
@@ -313,7 +324,7 @@ class NeoInteracter:
             result = await NeoInteracter._extract_data_from_graph(
                 self.driver,
                 names,
-                doc_id,
+                dialog_id,
                 node_limit=node_limit,
                 edge_limit=edge_limit,
                 k_hops=k_hops,
@@ -326,4 +337,22 @@ class NeoInteracter:
         except Exception as e:
             return None # подумать над выводом из классов
         
+
+
+
+async def main():
+    data = [{"text": "Thomas works for Neo4j", "dialog_id": "1"},
+                              {"text": "Thomas lives in Grosuplje", "dialog_id": "1"},
+                              {"text": "Thomas went to school in Grosuplje", "dialog_id": "1"}]
+    inter = NeoInteracter()
+    await inter.create_graph(data)
+
+    ans = await inter.graph_context_from_chunks(['who is thomas?', "Thomas is working for what?"], "1")
+
+    print(ans)
+
+if __name__=="__main__":
+    asyncio.run(main())
+
+
 
