@@ -11,11 +11,11 @@ services:
       QDRANT_URL: ${QDRANT_URL}
     volumes:
       - ./qdrant_data:/qdrant/storage
-#    healthcheck: # не работает
-#      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 30
+    healthcheck: # не работает
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
 
 
@@ -53,8 +53,8 @@ services:
     container_name: rag
     restart: unless-stopped
     depends_on:
-#      qdrant:
-#        condition: service_healthy
+      qdrant:
+        condition: service_healthy
       neo4j:
         condition: service_healthy
     environment:
@@ -66,3 +66,6 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
     ports:
       - "8000:8000"
+
+#networks:
+

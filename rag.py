@@ -1,6 +1,8 @@
 import fastapi
 from fastapi.responses import JSONResponse
 import json
+import dotenv
+import os
 from Handling.Embedder import Embedder
 
 from Databases.QInteracter import QInteracter
@@ -11,9 +13,12 @@ from Handling.Chunker import Chunker
 
 import asyncio
 import uuid
+from pydantic import BaseModel
 
 import logging
 from pathlib import Path
+
+dotenv.load_dotenv()
 
 base_dir = Path(__file__).resolve().parent
 logs_dir = base_dir.parent / "Logs"
@@ -28,19 +33,47 @@ logging.basicConfig(
 )
 
 
+class ContentItem(BaseModel):
+    fileId: str
+    fileName: str
+    text: str
+
+class LoadRequest(BaseModel):
+    content: list[ContentItem]
+    dialogId: str
+
+class DialogMessage(BaseModel):
+    message: str
+    role: str
+
+class QueryRequest(BaseModel):
+    dialogId: str
+    dialogMessages: list[DialogMessage]
+    question: str
+
 rag = fastapi.FastAPI()
-qdrant = QInteracter()
-neo = NeoInteracter()
-llm = LLM()
-embedder = Embedder()
-chunker = Chunker()
+
+qdrant = None
+neo = None
+llm = None
+embedder = None
+chunker = None
+
+@rag.on_event("startup")
+async def startup_event():
+    global qdrant, neo, llm, embedder, chunker
+    qdrant = QInteracter()
+    neo = NeoInteracter()
+    llm = LLM()
+    embedder = Embedder()
+    chunker = Chunker()
 
 # Загрузить документ в сервис
 @rag.post("/load")
-async def load(data: json):
+async def load(data: LoadRequest):
     try:
         logging.info("Попытка получить данные")
-        data = json.loads(data)
+        data = data.dict()
         logging.info("Данные успешно получены")
 
     except Exception as e:
@@ -110,12 +143,12 @@ async def load(data: json):
 
 
 # Получить ответ от сервиса по запросу
-@rag.get("/query")
-async def query(data: json):
+@rag.post("/query")
+async def query(data: QueryRequest):
 
     try:
         logging.info("Получение запроса")
-        data = json.loads(data)
+        data = data.dict()
         """
           {
             "dialogId": "идентификатор_диалога",
