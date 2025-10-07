@@ -1,12 +1,6 @@
-import requests
-from fastapi.responses import JSONResponse
+from transformers import AutoTokenizer
 
-def test_load(data) -> JSONResponse:
-    pass
-
-def test_query(query) -> JSONResponse:
-    pass
-
-
-
-
+tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
+inputs = tokenizer("test", return_tensors="pt")
+outputs = model(**inputs)
+print("Output shape:", outputs.last_hidden_state.shape)

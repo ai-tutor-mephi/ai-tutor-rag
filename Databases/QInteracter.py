@@ -7,7 +7,7 @@ from qdrant_client.models import (
 from qdrant_client.http.models import PointStruct
 from openai import OpenAI
 
-from ..LLM.Prompts import ASPECTS_SYS
+from LLM.Prompts import ASPECTS_SYS
 
 import os
 import dotenv

@@ -53,11 +53,11 @@ class QueryRequest(BaseModel):
 
 rag = fastapi.FastAPI()
 
-qdrant = None
-neo = None
-llm = None
-embedder = None
-chunker = None
+qdrant: QInteracter = None
+neo: NeoInteracter = None
+llm: LLM = None
+embedder: Embedder = None
+chunker: Chunker = None
 
 @rag.on_event("startup")
 async def startup_event():

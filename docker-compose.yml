@@ -53,10 +53,8 @@ services:
     container_name: rag
     restart: unless-stopped
     depends_on:
-      qdrant:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
+      - qdrant
+      - neo4j
     environment:
 
       QDRANT_URL: http://qdrant:6333
@@ -64,6 +62,10 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USERNAME: ${NEO4J_USERNAME}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    volumes:
+      - ./hf_cache:/root/.cache/huggingface
+      - ./Logs:/Logs
+
     ports:
       - "8000:8000"
 

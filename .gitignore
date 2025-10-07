@@ -219,3 +219,4 @@ marimo/_lsp/
 __marimo__/
 /.env
 /__init__.py
+/hf_cache/
