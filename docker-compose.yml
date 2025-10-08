@@ -69,5 +69,9 @@ services:
     ports:
       - "8000:8000"
 
+    volumes:
+    - ./hf_cache:/root/.cache/huggingface
+
+
 #networks:
 
