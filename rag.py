@@ -1,6 +1,8 @@
 import fastapi
 from fastapi.responses import JSONResponse
 import json
+import dotenv
+import os
 from Handling.Embedder import Embedder
 
 from Databases.QInteracter import QInteracter
@@ -11,24 +13,51 @@ from Handling.Chunker import Chunker
 
 import asyncio
 import uuid
+from pydantic import BaseModel
 
 import logging
 from pathlib import Path
 
-base_dir = Path(__file__).resolve().parent
-logs_dir = base_dir.parent / "Logs"
+from typing import List
+import sys
+
+dotenv.load_dotenv()
+
+logs_dir = Path("/Logs")
 logs_dir.mkdir(parents=True, exist_ok=True)
 log_file = logs_dir / "rag.log"
 
 logging.basicConfig(
     level=logging.INFO,
-    filename=log_file,
-    filemode="a", 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 
+class ContentItem(BaseModel):
+    fileId: str
+    fileName: str
+    text: str
+
+class LoadRequest(BaseModel):
+    content: List[ContentItem]
+    dialogId: str
+
+class DialogMessage(BaseModel):
+    message: str
+    role: str
+
+class QueryRequest(BaseModel):
+    dialogId: str
+    dialogMessages: List[DialogMessage]
+    question: str
+
 rag = fastapi.FastAPI()
+
+
 qdrant = QInteracter()
 neo = NeoInteracter()
 llm = LLM()
@@ -37,10 +66,10 @@ chunker = Chunker()
 
 # Загрузить документ в сервис
 @rag.post("/load")
-async def load(data: json):
+async def load(data: LoadRequest):
     try:
         logging.info("Попытка получить данные")
-        data = json.loads(data)
+        data = data.dict()
         logging.info("Данные успешно получены")
 
     except Exception as e:
@@ -110,12 +139,12 @@ async def load(data: json):
 
 
 # Получить ответ от сервиса по запросу
-@rag.get("/query")
-async def query(data: json):
+@rag.post("/query")
+async def query(data: QueryRequest):
 
     try:
         logging.info("Получение запроса")
-        data = json.loads(data)
+        data = data.dict()
         """
           {
             "dialogId": "идентификатор_диалога",
@@ -148,7 +177,7 @@ async def query(data: json):
         # выделяем аспекты из запроса
         aspects_text = await qdrant.extract_aspects_from_question(question)
         for aspect in aspects_text:
-            aspects.append({"text": aspect, "dialogId": dialog_id})
+            aspects.append({"text": aspect, "dialog_id": dialog_id})
 
         logging.info("Векторизуем аспекты")
         # векторизуем аспекты

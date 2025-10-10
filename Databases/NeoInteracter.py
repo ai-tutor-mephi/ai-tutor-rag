@@ -9,34 +9,35 @@ from neo4j import GraphDatabase
 import json
 from typing import Optional
 
-from FindsForNeo import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
-from ..LLM.Prompts import ENTITY_SYS
+from .FindsForNeo import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
+from LLM.Prompts import ENTITY_SYS
 
 import asyncio
+import sys
 
 import logging
 from pathlib import Path
 
-# путь к директории с текущим файлом
-base_dir = Path(__file__).resolve().parent
+# logs_dir = Path("/Logs")
+# logs_dir.mkdir(parents=True, exist_ok=True)
+# log_file = logs_dir / "neo.log"
 
-# подняться на n директорий вверх
-root_dir = base_dir.parents[1]
-
-# путь к Logs
-logs_dir = root_dir / "Logs"
-logs_dir.mkdir(parents=True, exist_ok=True)  # создаём папку, если её нет
-
-# сам лог-файл
-log_file = logs_dir / "neo.log"
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+#     handlers=[
+#         logging.FileHandler(log_file, encoding="utf-8"),
+#         logging.StreamHandler(sys.stdout)
+#     ]
+# )
 
 logging.basicConfig(
     level=logging.INFO,
-    filename=log_file,
-    filemode="a", 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
-                    
 
 
 load_dotenv()
@@ -90,6 +91,26 @@ class NeoInteracter:
             logging.info(f"Сущности и связи извлечены {result}")
             print(result)
 
+            dialog_id = chunks[0].get("dialog_id")
+
+            with self.driver.session(database=self.database) as session:
+                session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.dialog_id IS NULL
+                    SET n.dialog_id = $dialog_id
+                    """,
+                    dialog_id=dialog_id
+                )
+                session.run(
+                    """
+                    MATCH ()-[r]-()
+                    WHERE r.dialog_id IS NULL
+                    SET r.dialog_id = $dialog_id
+                    """,
+                    dialog_id=dialog_id
+                )
+
             # Generate summaries for nodes and relationships
             logging.info("Генерация резюме для сущностей и связей...")
             result = await self.ms_graph.summarize_nodes_and_rels()
@@ -99,27 +120,6 @@ class NeoInteracter:
             logging.info("Выделение и суммаризация комьюнити...")
             result = await self.ms_graph.summarize_communities()
             print(result)
-
-            dialog_id = chunks[0].get("dialog_id")
-
-            # Проставить dialog_id всем новым нодам и рёбрам
-            with self.driver.session() as session:
-                session.run(
-                    """
-                    MATCH (n)
-                    WHERE NOT EXISTS(n.dialog_id)
-                    SET n.dialog_id = $dialog_id
-                    """,
-                    dialog_id=dialog_id
-                )
-                session.run(
-                    """
-                    MATCH ()-[r]-()
-                    WHERE NOT EXISTS(r.dialog_id)
-                    SET r.dialog_id = $dialog_id
-                    """,
-                    dialog_id=dialog_id
-                )
 
 
         except Exception:
@@ -152,10 +152,16 @@ class NeoInteracter:
                     {"role": "user", "content": " ".join(chunks)}],
             model=light_model
         )
+        ent_resp = ent_resp.content
         logging.info(f"Ответ модели для извлечения сущностей: {ent_resp}")
 
         try:
-            ents = json.loads(ent_resp.content).get("entities", [])
+            parsed = json.loads(ent_resp)
+            if isinstance(parsed, list):
+                ents = parsed
+            else:
+                ents = parsed.get("entities", [])
+            
             names = [e.get("name", "").strip() for e in ents if e.get("name")]
             return await asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
         except Exception:
@@ -202,7 +208,9 @@ class NeoInteracter:
                 {"ids": node_ids, "dialog_id": dialog_id}
             ).data()
 
-        result = asyncio.to_thread(NeoInteracter._assemble_context, ctx, comm, char_limit=None, include_nodes_without_summary=False)
+        result = await asyncio.to_thread(NeoInteracter._assemble_context, 
+                                   ctx, comm, char_limit=None, 
+                                   include_nodes_without_summary=False)
         return result
 
     @staticmethod
@@ -317,6 +325,8 @@ class NeoInteracter:
         names = await self.extract_entities_names(chunks, ms=self.ms_graph, light_model=self.light_model)
         if not names:
             return {"centers": [], "edges": [], "communities": [], "context_text": ""}
+        
+        logging.info(f"Выделены имена для поиска в графе: {names}")
 
         # 3.2 подключаемся к нужной БД
 
@@ -328,11 +338,15 @@ class NeoInteracter:
                 node_limit=node_limit,
                 edge_limit=edge_limit,
                 k_hops=k_hops,
-                database=database
+                database=self.database
             )
+            logging.info(f"Данные из графа получены: {result.get('context_text','')[:500]}...")
+
             # подрежем текст если очень длинный
             if len(result.get("context_text","")) > context_lines_limit:
                 result["context_text"] = result["context_text"][:context_lines_limit]
+            
+            logging.info(f"Сформирован контекст из графа: {result.get('context_text','')[:500]}...")
             return result
         except Exception as e:
             return None # подумать над выводом из классов

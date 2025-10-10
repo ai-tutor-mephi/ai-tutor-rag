@@ -12,3 +12,6 @@ Microservice for generating a response based on a question and a document.
 3) Extract entities from them and search the graph database.
 4) Based on the found graph, form a context and send it to LLM with a question
 
+
+Before start:
+1) write ```pip install -e ./ms-graphrag-neo4j```
