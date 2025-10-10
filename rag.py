@@ -18,18 +18,22 @@ from pydantic import BaseModel
 import logging
 from pathlib import Path
 
+from typing import List
+import sys
+
 dotenv.load_dotenv()
 
-base_dir = Path(__file__).resolve().parent
-logs_dir = base_dir.parent / "Logs"
+logs_dir = Path("/Logs")
 logs_dir.mkdir(parents=True, exist_ok=True)
 log_file = logs_dir / "rag.log"
 
 logging.basicConfig(
     level=logging.INFO,
-    filename=log_file,
-    filemode="a", 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 
@@ -39,7 +43,7 @@ class ContentItem(BaseModel):
     text: str
 
 class LoadRequest(BaseModel):
-    content: list[ContentItem]
+    content: List[ContentItem]
     dialogId: str
 
 class DialogMessage(BaseModel):
@@ -48,25 +52,17 @@ class DialogMessage(BaseModel):
 
 class QueryRequest(BaseModel):
     dialogId: str
-    dialogMessages: list[DialogMessage]
+    dialogMessages: List[DialogMessage]
     question: str
 
 rag = fastapi.FastAPI()
 
-qdrant: QInteracter = None
-neo: NeoInteracter = None
-llm: LLM = None
-embedder: Embedder = None
-chunker: Chunker = None
 
-@rag.on_event("startup")
-async def startup_event():
-    global qdrant, neo, llm, embedder, chunker
-    qdrant = QInteracter()
-    neo = NeoInteracter()
-    llm = LLM()
-    embedder = Embedder()
-    chunker = Chunker()
+qdrant = QInteracter()
+neo = NeoInteracter()
+llm = LLM()
+embedder = Embedder()
+chunker = Chunker()
 
 # Загрузить документ в сервис
 @rag.post("/load")
@@ -181,7 +177,7 @@ async def query(data: QueryRequest):
         # выделяем аспекты из запроса
         aspects_text = await qdrant.extract_aspects_from_question(question)
         for aspect in aspects_text:
-            aspects.append({"text": aspect, "dialogId": dialog_id})
+            aspects.append({"text": aspect, "dialog_id": dialog_id})
 
         logging.info("Векторизуем аспекты")
         # векторизуем аспекты

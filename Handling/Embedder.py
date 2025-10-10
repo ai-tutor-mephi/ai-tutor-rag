@@ -3,28 +3,21 @@ import torch
 
 import logging
 from pathlib import Path
+import sys
 
 
 
-
-# путь к директории с текущим файлом
-base_dir = Path(__file__).resolve().parent
-
-# подняться на n директорий вверх
-root_dir = base_dir.parents[1]
-
-# путь к Logs
-logs_dir = root_dir / "Logs"
-logs_dir.mkdir(parents=True, exist_ok=True)  # создаём папку, если её нет
-
-# сам лог-файл
-log_file = logs_dir / "Embedder.log"
+logs_dir = Path("/Logs")
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / "embedder.log"
 
 logging.basicConfig(
     level=logging.INFO,
-    filename=log_file,
-    filemode="a", 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 model_id = "BAAI/bge-m3"

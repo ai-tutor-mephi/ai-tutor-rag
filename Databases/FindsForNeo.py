@@ -1,9 +1,9 @@
 FIND_NODES = """
 UNWIND $names AS q
 MATCH (n)
-WHERE n.dialog_id = $dialog_id
+WHERE n.dialog_id = $dialog_id OR n.dialog_id IS NULL
 WITH q, n, [
-  n.name, n.title, n.text, n.summary
+  n.name, n.title, n.text, n.summary, n.id
 ] AS fields
 WITH q, n, [v IN fields WHERE v IS NOT NULL] AS vals
 WHERE any(val IN vals WHERE toLower(toString(val)) CONTAINS toLower(q))

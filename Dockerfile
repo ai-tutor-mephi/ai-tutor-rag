@@ -15,6 +15,9 @@ RUN python -c "from transformers import AutoTokenizer, AutoModel; \
     AutoTokenizer.from_pretrained(model_id); \
     AutoModel.from_pretrained(model_id)"
 
+COPY ms_graphrag_neo4j ./ms_graphrag_neo4j
+RUN pip install -e ./ms_graphrag_neo4j
+
 COPY . .
 
 EXPOSE 8000

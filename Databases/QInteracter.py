@@ -1,4 +1,5 @@
-from qdrant_client import QdrantClient, models as qm
+from qdrant_client import QdrantClient
+from qdrant_client import models as qm
 from qdrant_client.models import (
     VectorParams, Distance, SparseVectorParams,
     OptimizersConfigDiff, PayloadSchemaType,
@@ -14,28 +15,22 @@ import dotenv
 
 import logging
 from pathlib import Path
+import sys
 
-# путь к директории с текущим файлом
-base_dir = Path(__file__).resolve().parent
+dotenv.load_dotenv()
 
-# подняться на n директорий вверх
-root_dir = base_dir.parents[1]
-
-# путь к Logs
-logs_dir = root_dir / "Logs"
-logs_dir.mkdir(parents=True, exist_ok=True)  # создаём папку, если её нет
-
-# сам лог-файл
+logs_dir = Path("/Logs")
+logs_dir.mkdir(parents=True, exist_ok=True)
 log_file = logs_dir / "qdrant.log"
 
 logging.basicConfig(
     level=logging.INFO,
-    filename=log_file,
-    filemode="a", 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
-
-dotenv.load_dotenv()
 
 client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_KEY"))
 
@@ -78,19 +73,17 @@ class QInteracter:
 
         # запрос. Также тут поддерживается фукнция поиска по нескольким запросам сразу, если чуть поменять
         logging.info("Выполнение dense поиска...")
-        q = qm.Query(
-            query_vector=("dense", query.get("dense_vector")),
-            query_filter=flt, # фильтр
-            limit=topk,
-            with_vectors=False,
-            # Можно запросить только нужные поля payload:
-            with_payload=qm.PayloadSelectorInclude(include=["text"])
-        )
 
-        resp = self.client.query_points(collection_name=query.get("dialog_id"), query=[q])
-        points = resp[0].points  # берем результаты первого (и единственного) запроса
+        resp = self.client.query_points(collection_name=query.get("dialog_id"), 
+                                        query=query.get("dense_vector"),
+                                        using="dense",
+                                        query_filter=flt,
+                                        limit=topk,
+                                        with_payload=qm.PayloadSelectorInclude(include=["text"]),
+                                        with_vectors=False)
+        points = resp.points  # берем результаты первого (и единственного) запроса
         
-        logging.info(f"Найдено {len(points)} ближайших чанков.")
+        logging.info(f"Найдено {len(points)} ближайших чанков. Тексты чанков: {[p.payload.get('text','')[:100]+'...' for p in points]}")
         return [p.payload.get("text", "") for p in points]
     
     async def load_in_qdrant(self, chunks: list[dict]) -> None:
@@ -108,7 +101,7 @@ class QInteracter:
             collection_name=dialog_id,  # коллекцию называем по идентификатору диалога, возможно, потом по другому
             vectors_config={
                 "dense": VectorParams(size=1024, distance=Distance.COSINE),
-                "sparse": SparseVectorParams()
+                "sparse": VectorParams(size=10000, distance=Distance.DOT) # пример для sparse
             },
             optimizers_config=OptimizersConfigDiff(
                 default_segment_number=2
