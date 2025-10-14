@@ -23,6 +23,7 @@ import sys
 
 dotenv.load_dotenv()
 
+# Настройка логов
 logs_dir = Path("/Logs")
 logs_dir.mkdir(parents=True, exist_ok=True)
 log_file = logs_dir / "rag.log"
@@ -36,7 +37,7 @@ logging.basicConfig(
     ]
 )
 
-
+# Создание Pydantic классов
 class ContentItem(BaseModel):
     fileId: str
     fileName: str
@@ -57,7 +58,7 @@ class QueryRequest(BaseModel):
 
 rag = fastapi.FastAPI()
 
-
+# Экземпляры моделей для сервиса
 qdrant = QInteracter()
 neo = NeoInteracter()
 llm = LLM()
@@ -69,7 +70,7 @@ chunker = Chunker()
 async def load(data: LoadRequest):
     try:
         logging.info("Попытка получить данные")
-        data = data.dict()
+        data = data.model_dump()
         logging.info("Данные успешно получены")
 
     except Exception as e:
@@ -81,7 +82,7 @@ async def load(data: LoadRequest):
         {
           "content": [
                       {
-                      "fileId": "идентификатор_документа", - ЭТО МОЙ doc_id
+                      "fileId": "идентификатор_документа",
                       "fileName": "...", 
                       "text": "..."
                       }
@@ -97,19 +98,16 @@ async def load(data: LoadRequest):
             file_name = data['content'][i]['fileName']
             text = data['content'][i]['text']
 
-
-            # ДОБАВИТЬ РАЗБИЕНИЕ ТЕКСТА НА ЧАНКИ!!!
-
             # разбиваем текст на чанки
             chunks = []
             logging.info("Разбиваем текст на чанки...")
             chunks_text = await asyncio.to_thread(chunker.make_chunks_from_text, text)
-            for chunk in chunks_text:
-                chunks.append({"text": chunk,
+            for chunk_text in chunks_text:
+                chunks.append({"text": chunk_text,
                                "file_name": file_name,
                                "dialog_id": dialog_id,
                                "file_id": file_id,
-                               "chunk_id": str(uuid.uuid4())})
+                               "chunk_id": str(uuid.uuid4())}) # айди чанков можно будет потом использовать
 
             logging.info("Чанки успешно получены")
 
@@ -144,7 +142,7 @@ async def query(data: QueryRequest):
 
     try:
         logging.info("Получение запроса")
-        data = data.dict()
+        data = data.model_dump()
         """
           {
             "dialogId": "идентификатор_диалога",
@@ -169,7 +167,11 @@ async def query(data: QueryRequest):
     try:
         # перефразируем запрос на основе диалога
         logging.info("Перефразирование запроса")
-        question = await llm.rewrite_question_from_dialogue(question=question, dialogue=''.join([f"{msg['role']}: {msg['message']}" for msg in dialog_messages]))
+
+        dialogue_messages = [f"{msg['role']}: {msg['message']}" for msg in dialog_messages]
+        dialogue =''.join(dialogue_messages)
+
+        question = await llm.rewrite_question_from_dialogue(question=question, dialogue=dialogue)
 
         aspects = []  # список словарей, где каждый словарь - аспект с метаданными
 
