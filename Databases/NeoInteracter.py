@@ -1,4 +1,3 @@
-# для каждого чанка, загруженного в qdrant и neo4j надо одинаковый чтобы в обоих БД у него был одинаковый id
 
 import os
 from dotenv import load_dotenv
@@ -18,26 +17,26 @@ import sys
 import logging
 from pathlib import Path
 
-# logs_dir = Path("/Logs")
-# logs_dir.mkdir(parents=True, exist_ok=True)
-# log_file = logs_dir / "neo.log"
-
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-#     handlers=[
-#         logging.FileHandler(log_file, encoding="utf-8"),
-#         logging.StreamHandler(sys.stdout)
-#     ]
-# )
+logs_dir = Path("/Logs")
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / "neo.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+#     handlers=[
+#         logging.StreamHandler(sys.stdout)
+#     ]
+# )
 
 
 load_dotenv()
@@ -110,7 +109,7 @@ class NeoInteracter:
                     """,
                     dialog_id=dialog_id
                 )
-
+                
             # Generate summaries for nodes and relationships
             logging.info("Генерация резюме для сущностей и связей...")
             result = await self.ms_graph.summarize_nodes_and_rels()
@@ -122,9 +121,9 @@ class NeoInteracter:
             print(result)
 
 
-        except Exception:
+        except Exception as e:
             import traceback
-            logging.error("Ошибка при создании графа в neo4j")
+            logging.error(f"Ошибка при создании графа в neo4j\n{e}")
             traceback.print_exc()
 
     @staticmethod

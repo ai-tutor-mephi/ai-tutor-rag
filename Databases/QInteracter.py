@@ -88,52 +88,37 @@ class QInteracter:
     
     async def load_in_qdrant(self, chunks: list[dict]) -> None:
         """
-        Функция создает коллекцию по dialog_id и загружает в нее данные. У каждого документа своя коллекция
+        Функция создает коллекцию по dialog_id и загружает в нее данные, если коллекции нет в БД. 
+        У каждого документа своя коллекция
         :param chunks: Чанки документа(вектора)
         :return:
         """
+        """
+        Пока структура чанка такая: {text: str, dense_vector: list[float],
+                                    (sparse_vector: dict,) - пока нет
+                                    dialog_id: str, file_id: str, file_name: str, chunk_id: str}
+        После можно использовать sparse для гибридного поиска да и в целом, сделать больше фичей.
+        """
+
         dialog_id = chunks[0].get("dialog_id")  # у всех чанков одинаковый dialog_id
-
-        # создать коллекцию
-        # Для каждого документа своя коллекция
-        logging.info(f"Создание коллекции в Qdrant для диалога {dialog_id}...")
-        client.create_collection(
-            collection_name=dialog_id,  # коллекцию называем по идентификатору диалога, возможно, потом по другому
-            vectors_config={
-                "dense": VectorParams(size=1024, distance=Distance.COSINE),
-                "sparse": VectorParams(size=10000, distance=Distance.DOT) # пример для sparse
-            },
-            optimizers_config=OptimizersConfigDiff(
-                default_segment_number=2
-            ),
-        )
-        logging.info(f"Коллекция {dialog_id} создана.")
-
-        logging.info(f"Создание индекса для метаданных в Qdrant для диалога {dialog_id}...")
-        client.create_payload_index(
-            collection_name=dialog_id,
-            field_name="dialog_id",
-            field_schema=PayloadSchemaType.KEYWORD
-        )
-
-        logging.info(f"Индекс для метаданных в Qdrant для документа {dialog_id} создан.")
+        file_id = chunks[0].get("file_id")
 
 
-        logging.info(f"Загрузка данных в Qdrant для документа {dialog_id}...")
-        # загрузка данных
+        
         points = []
         for ch in chunks:
             points.append(
                 PointStruct(
-                    id=ch.get("chunk_id"),
+                    id=ch.get("chunk_id", ""),
                     vector={
                         "dense": ch.get("dense_vector"),  # list[float], len=1024
-                        # "sparse": ch.get("sparse_vector")  # {indices: [...], values: [...]}
+                        # "sparse": ch.get("sparse_vector", "")   # {indices: [...], values: [...]}
                     },
                     payload={
-                        "dialog_id": dialog_id, # чанки должны хранить метаданные в себе
+                        "dialog_id": dialog_id,
                         "chunk_id": ch.get("chunk_id"), # возможно, хранить его и не надо
                         "text": ch.get("text"),
+                        "file_id": file_id,
                         # "title": ch.get("title"),
                         # "page": ch.get("page"),
                         # "entities": ch.get("entities"), # возможно, убрать
@@ -141,16 +126,37 @@ class QInteracter:
                     }
                 )
             )
-
-        """
-        Пока структура чанка такая: {text: str, dense_vector: list[float],
-                                    (sparse_vector: dict,) - Убираем
-                                    dialog_id: str, file_id: str, file_name: str, chunk_id: str}
-        После можно использовать sparse для гибридного поиска да и в целом, сделать больше фичей.
-        Если захотим гибридный поиск, что bgem3 надо будет локально развернуть, HF не поддерживает sparse
-        """
-
-        logging.info(f"Загрузка {len(points)} точек в коллекцию {dialog_id}...")
         
-        client.upsert(collection_name=dialog_id, points=points)
+        
+        if client.collection_exists(collection_name=dialog_id):
+            logging.info(f"Коллекция {dialog_id} уже существует. Добавление новых данных...")
+            client.upsert(collection_name=dialog_id, points=points)
+            return
+
+
+        else:
+            # создать коллекцию
+            # Для каждого диалога своя коллекция
+            logging.info(f"Создание коллекции в Qdrant для диалога {dialog_id}...")
+            client.create_collection(
+                collection_name=dialog_id,  # коллекцию называем по идентификатору диалога, возможно, потом по другому
+                vectors_config={
+                    "dense": VectorParams(size=1024, distance=Distance.COSINE),
+                    "sparse": VectorParams(size=10000, distance=Distance.DOT) # пример для sparse
+                },
+                optimizers_config=OptimizersConfigDiff(
+                    default_segment_number=2
+                ),
+            )
+            logging.info(f"Коллекция {dialog_id} создана.")
+
+            logging.info(f"Создание индекса для метаданных в Qdrant для диалога {dialog_id}...")
+            client.create_payload_index(
+                collection_name=dialog_id,
+                field_name="dialog_id",
+                field_schema=PayloadSchemaType.KEYWORD
+            )
+            logging.info(f"Загрузка {len(points)} точек в коллекцию {dialog_id}...")
+            client.upsert(collection_name=dialog_id, points=points)
+            return
 

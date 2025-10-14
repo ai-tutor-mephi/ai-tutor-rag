@@ -10,7 +10,9 @@ ENTITY_SYS = ("""
         {"name": "Machine learning", "type": "concept"},
         {"name": "Artificial intelligence", "type": "concept"}
     ]
-    }"""
+    }
+              
+    """
 )
 
 ASPECTS_SYS= """You are an assistant that extracts key aspects from a user query. 
@@ -40,7 +42,7 @@ As you can see, there aren't any answers, only aspects.
 CONTEXT_SYS = (
     "You are a graph-grounded assistant. "
     "Answer ONLY using the facts from the Graph Context. Use ALL relevant information. "
-    "If information is absolutely missing, say you don't know."
+    "If information is absolutely missing(if there aren't ANY relevant information), say you don't know. If there is some simillar information - use it"
     "In your answer, indicate only synthesized information. Do not indicate where you got it from and the connections between entities"
     "Ignore community summaries. Do not mention them in the answer."
     "Answer in the same language as the question."
