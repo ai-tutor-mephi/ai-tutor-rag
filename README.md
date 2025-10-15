@@ -15,9 +15,7 @@ Microservice for generating a response based on a question and a document.
 
 # Quick start:
 1) Clone the repository and change your directory to it
-3) write ``` pip install -r requirements.txt ```
-4) write ```pip install -e ./ms-graphrag-neo4j```
-5) write ```docker compose up --build``` that build the docker-image and up it in your device
+2) write ```docker compose up --build``` that build the docker-image and up it in your device
 
 # Endpoints
 
