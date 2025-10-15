@@ -15,7 +15,23 @@ Microservice for generating a response based on a question and a document.
 
 # Quick start:
 1) Clone the repository and change your directory to it
-2) write ```docker compose up --build``` that build the docker-image and up it in your device
+2) Write your own ```.env``` with that fields:
+```
+GROQ_API_KEY=
+
+QDRANT_KEY=
+QDRANT_URL=
+
+NEO4J_URI=
+NEO4J_USERNAME=
+NEO4J_PASSWORD=
+
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+MS_GRAPHRAG_MODEL=openai/gpt-oss-20b
+MS_LIGHT_MODEL=llama-3.1-8b-instant
+```
+3) Write ```docker compose up --build``` that build the docker-image and up it in your device
 
 # Endpoints
 
