@@ -3,6 +3,15 @@
 
 Microservice for generating a response based on a question and a document.
 
+## Презентация сервиса AI Tutor
+Для полного просмотра кликните по картинке
+
+<div align="center">
+  <a href="./docs/AI_Tutor_presentation.pdf">
+    <img src="./docs/ai-tutor-preview.png" alt="AI Tutor Presentation" width="800">
+  </a>
+</div>
+
 ### Ingestion
 <img width="2048" height="1230" alt="image" src="https://github.com/user-attachments/assets/2bd6feac-4a1e-4c07-949e-c9a1d301f305" />
 
