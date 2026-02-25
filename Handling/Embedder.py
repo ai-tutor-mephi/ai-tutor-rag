@@ -1,3 +1,11 @@
+"""
+Модуль для векторизации текста (embedding).
+
+Этот модуль преобразует текстовые данные в векторные представления,
+которые используются для семантического поиска в векторной БД.
+Использует модель BAAI/bge-m3 для создания embeddings.
+"""
+
 from transformers import AutoTokenizer, AutoModel
 import torch
 
@@ -8,6 +16,7 @@ from utils.MyLogs import setup_logger
 # Настройка логов
 setup_logger(__file__)
 
+# Инициализация модели для векторизации
 model_id = "BAAI/bge-m3"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModel.from_pretrained(model_id)
@@ -15,18 +24,41 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Embedder:
+    """
+    Класс для векторизации текста.
+    
+    Преобразует текстовые строки в плотные векторы (dense vectors),
+    которые используются для семантического поиска в Qdrant.
+    """
 
     def __init__(self, model: AutoModel.from_pretrained = model, tokenizer: AutoTokenizer.from_pretrained = tokenizer):
+        """
+        Инициализация векторизатора.
+        
+        Args:
+            model: Модель для создания embeddings
+            tokenizer: Токенизатор для обработки текста
+        """
         self.model = model
         self.tokenizer = tokenizer
-        self.model.eval()
+        self.model.eval()  # Переводим модель в режим инференса
 
     
     def embed(self, text: str) -> list[float]:
         """
-        Embedding text. Получаем dense_vector
-        :param text:
-        :return:
+        Преобразует текст в векторное представление (embedding).
+        
+        Процесс:
+        1. Токенизация текста
+        2. Получение embeddings через модель
+        3. Усреднение по токенам
+        4. Нормализация (L2 norm)
+        
+        Args:
+            text: Текст для векторизации
+            
+        Returns:
+            Список чисел (вектор) размерностью модели
         """
         logging.info("Векторизация текста...")
         input = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt")

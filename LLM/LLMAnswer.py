@@ -1,3 +1,13 @@
+"""
+Модуль для работы с языковыми моделями (LLM).
+
+Этот модуль предоставляет интерфейс для:
+- Генерации ответов на основе графового контекста
+- Перефразирования вопросов с учетом истории диалога
+
+Использует OpenAI API и MsGraphRAG для работы с графовыми данными.
+"""
+
 import os
 from dotenv import load_dotenv
 
@@ -15,9 +25,10 @@ setup_logger(__file__)
 
 load_dotenv()
 model = os.getenv("MS_GRAPHRAG_MODEL")
-light_model=os.getenv("MS_LIGHT_MODEL")
+light_model = os.getenv("MS_LIGHT_MODEL")
 
-# Инициализируем MsGraphRAG только для генерации ответа (никакой экстракции сущностей внутри!) Можно заменить позже на OpenAi
+# Инициализация подключений
+# MsGraphRAG используется только для генерации ответов (не для экстракции сущностей)
 driver = GraphDatabase.driver(
     os.getenv("NEO4J_URI"),
     auth=(os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
@@ -25,7 +36,15 @@ driver = GraphDatabase.driver(
 ms = MsGraphRAG(driver=driver, model=os.getenv("MS_GRAPHRAG_MODEL", "openai/gpt-oss-20b"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_API_BASE_URL"))
 
+
 class LLM:
+    """
+    Класс для работы с языковыми моделями.
+    
+    Предоставляет методы для:
+    - Генерации ответов на основе графового контекста
+    - Перефразирования вопросов с учетом истории диалога
+    """
     def __init__(self, model=model, driver=driver, ms=ms, client=client, light_model=light_model):
         self.model=model
         self.light_model=light_model
@@ -44,7 +63,17 @@ class LLM:
         graph_context_text: str,
     ) -> str:
         """
-        берём исходный вопрос пользователя + собранный графовый контекст и отвечаем строго по нему.
+        Генерирует ответ на вопрос на основе графового контекста.
+        
+        Использует LLM для генерации ответа, который строго основан
+        на предоставленном графовом контексте из Neo4j.
+        
+        Args:
+            question: Вопрос пользователя
+            graph_context_text: Графовый контекст из Neo4j
+            
+        Returns:
+            Сгенерированный ответ
         """
 
         user_prompt = f"Question: {question}\n\nGraph Context:\n{graph_context_text}"
@@ -61,12 +90,20 @@ class LLM:
 
 
 
-    async def rewrite_question_from_dialogue(self, question: str, dialogue:str) -> str:
+    async def rewrite_question_from_dialogue(self, question: str, dialogue: str) -> str:
         """
-        Перефразирует вопрос на основе всего диалога
-        :param question:
-        :param dialogue:
-        :return:
+        Перефразирует вопрос на основе истории диалога.
+        
+        Улучшает понимание вопроса, учитывая контекст предыдущих
+        сообщений в диалоге. Это позволяет лучше интерпретировать
+        вопросы, которые ссылаются на предыдущий контекст.
+        
+        Args:
+            question: Исходный вопрос пользователя
+            dialogue: История диалога в виде строки
+            
+        Returns:
+            Перефразированный вопрос
         """
 
         logging.info(f"Перефразируем вопрос: {question}\n на основе диалога: {dialogue}\n модель: {self.light_model}")

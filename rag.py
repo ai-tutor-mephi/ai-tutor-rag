@@ -1,191 +1,191 @@
+"""
+FastAPI приложение для RAG (Retrieval-Augmented Generation) системы.
+
+Этот модуль содержит только HTTP эндпоинты. Вся бизнес-логика вынесена
+в отдельные сервисы (services/load_service.py и services/query_service.py).
+
+Архитектура:
+- Эндпоинты (этот файл) - только валидация запросов и вызов сервисов
+- Сервисы (services/) - бизнес-логика и оркестрация пайплайна
+- Классы (Handling/, Databases/, LLM/) - детальная реализация операций
+"""
+
 import fastapi
 from fastapi.responses import JSONResponse
-import json
 import dotenv
-import os
-from Handling.Embedder import Embedder
-
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
-
-from LLM.LLMAnswer import LLM
-from Handling.Chunker import Chunker
-
-import asyncio
-import uuid
-
 import logging
-from typing import List
-import sys
 
-from ragPydantic import ContentItem, LoadRequest, DialogMessage, QueryRequest
+from ragPydantic import LoadRequest, QueryRequest
 from utils.MyLogs import setup_logger
 
+# Импорт сервисов для бизнес-логики
+from services import LoadService, QueryService
+
+# Импорт классов для инициализации сервисов
+from Handling.Embedder import Embedder
+from Handling.Chunker import Chunker
+from Databases.QInteracter import QInteracter
+from Databases.NeoInteracter import NeoInteracter
+from LLM.LLMAnswer import LLM
+
+# Загрузка переменных окружения
 dotenv.load_dotenv()
 
 # Настройка логов
 setup_logger(__file__)
 
-rag = fastapi.FastAPI()
+# Инициализация FastAPI приложения
+rag = fastapi.FastAPI(
+    title="RAG Service",
+    description="Сервис для загрузки документов и генерации ответов на основе RAG",
+    version="1.0.0"
+)
 
-# Экземпляры моделей для сервиса
+# Инициализация компонентов системы
+# Эти экземпляры используются всеми сервисами
 qdrant = QInteracter()
 neo = NeoInteracter()
 llm = LLM()
 embedder = Embedder()
 chunker = Chunker()
 
-# Загрузить документ в сервис
+# Инициализация сервисов бизнес-логики
+load_service = LoadService(
+    chunker=chunker,
+    embedder=embedder,
+    qdrant=qdrant,
+    neo=neo
+)
+
+query_service = QueryService(
+    embedder=embedder,
+    qdrant=qdrant,
+    neo=neo,
+    llm=llm
+)
+
+
 @rag.post("/load")
-async def load(data: LoadRequest):
-    try:
-        logging.info("Попытка получить данные")
-        data = data.model_dump()
-        logging.info("Данные успешно получены")
-
-    except Exception as e:
-        logging.error(f"Ошибка: {e}")
-        return JSONResponse(content={'message': f'Не удалось сохранить файл:\n{e}'}, status_code=400)
-
-    try:
-        """
+async def load_endpoint(data: LoadRequest) -> JSONResponse:
+    """
+    Эндпоинт для загрузки документов в систему.
+    
+    Принимает список файлов и загружает их в базы данных:
+    - Qdrant (векторная БД для семантического поиска)
+    - Neo4j (графовая БД для знаний)
+    
+    Пайплайн обработки (скрыт в LoadService):
+    1. Разбиение текста на чанки
+    2. Векторизация чанков
+    3. Сохранение в Qdrant
+    4. Создание графа в Neo4j
+    
+    Request Body:
         {
-          "content": [
-                      {
-                      "fileId": "идентификатор_документа",
-                      "fileName": "...", 
-                      "text": "..."
-                      }
-          ],
-          "dialogId": "идентификатор_диалога"
-        }
-
-        """
-        content = data['content']
-        dialog_id = data['dialogId']
-        for i in range(len(content)):
-            file_id = data['content'][i]['fileId']
-            file_name = data['content'][i]['fileName']
-            text = data['content'][i]['text']
-
-            # разбиваем текст на чанки
-            chunks = []
-            logging.info("Разбиваем текст на чанки...")
-            chunks_text = await asyncio.to_thread(chunker.make_chunks_from_text, text)
-            for chunk_text in chunks_text:
-                chunks.append({"text": chunk_text,
-                               "file_name": file_name,
-                               "dialog_id": dialog_id,
-                               "file_id": file_id,
-                               "chunk_id": str(uuid.uuid4())}) # айди чанков можно будет потом использовать
-
-            logging.info("Чанки успешно получены")
-
-            # векторизуем чанки и добавляем вектор, dialog_id в метаданные добавили выше
-            logging.info("Векторизация чанков...")
-            for chunk in chunks:
-                chunk["dense_vector"] = await asyncio.to_thread(embedder.embed, chunk["text"])
-
-
-            logging.info("Чанки векторизованы")
-
-            # загружаем в qdrant
-            logging.info("Загрузка чанков в qdrand...")
-            await qdrant.load_in_qdrant(chunks)
-            logging.info("Чанки успешно загружены")
-
-            # загружаем в neo4j
-            logging.info("Загрузка чанков в neo4j")
-            await neo.create_graph(chunks)
-            logging.info("Чанки успешно загружены")
-
-        return JSONResponse(content={'message':'OK'}, status_code=200)
-
-    except Exception as e:
-        logging.info(f"Ошибка: {e}")
-        return JSONResponse(content={'message': f'Bad Request:\n{e}'}, status_code=500)
-
-
-# Получить ответ от сервиса по запросу
-@rag.post("/query")
-async def query(data: QueryRequest):
-
-    try:
-        logging.info("Получение запроса")
-        data = data.model_dump()
-        """
-          {
-            "dialogId": "идентификатор_диалога",
-            "dialogMessages": [
-                    {
-                    "message": "...", 
-                    "role": "..."
-                    },
-                    ...
+            "content": [
+                {
+                    "fileId": "идентификатор_документа",
+                    "fileName": "название_файла",
+                    "text": "текст_документа"
+                }
             ],
-            "question": "..."
-            }
-        """
-        dialog_id = data["dialogId"]
-        dialog_messages = data["dialogMessages"]
-        question = data["question"]
+            "dialogId": "идентификатор_диалога"
+        }
+    
+    Returns:
+        JSONResponse с результатом загрузки
+    """
+    try:
+        # Валидация и преобразование данных
+        logging.info("Получен запрос на загрузку документов")
+        data_dict = data.model_dump()
+        content = data_dict['content']
+        dialog_id = data_dict['dialogId']
+        
+        logging.info(f"Обработка {len(content)} файлов для диалога {dialog_id}")
+        
+        # Вызов сервиса для обработки файлов
+        await load_service.process_files(
+            content=content,
+            dialog_id=dialog_id
+        )
+        
+        logging.info(f"Документы успешно загружены для диалога {dialog_id}")
+        return JSONResponse(
+            content={'message': 'OK'},
+            status_code=200
+        )
         
     except Exception as e:
-        logging.error("Ошибка: {e}")
-        return JSONResponse(content={'message': f'Bad Request:\n{e}'}, status_code=400)
+        logging.error(f"Ошибка при загрузке документов: {e}")
+        return JSONResponse(
+            content={'message': f'Не удалось загрузить документы:\n{e}'},
+            status_code=500
+        )
 
+
+@rag.post("/query")
+async def query_endpoint(data: QueryRequest) -> JSONResponse:
+    """
+    Эндпоинт для получения ответа на вопрос пользователя.
+    
+    Обрабатывает вопрос пользователя и возвращает ответ на основе:
+    - Загруженных документов (через векторный поиск в Qdrant)
+    - Графа знаний (через поиск в Neo4j)
+    - Контекста диалога (для перефразирования вопроса)
+    
+    Пайплайн обработки (скрыт в QueryService):
+    1. Перефразирование вопроса на основе истории диалога
+    2. Извлечение ключевых аспектов из вопроса
+    3. Векторный поиск релевантных чанков в Qdrant
+    4. Построение графового контекста в Neo4j
+    5. Генерация ответа через LLM
+    
+    Request Body:
+        {
+            "dialogId": "идентификатор_диалога",
+            "dialogMessages": [
+                {
+                    "message": "текст_сообщения",
+                    "role": "user|assistant"
+                }
+            ],
+            "question": "вопрос_пользователя"
+        }
+    
+    Returns:
+        JSONResponse с ответом и идентификатором диалога
+    """
     try:
-        # перефразируем запрос на основе диалога
-        logging.info("Перефразирование запроса")
-
-        dialogue_messages = [f"{msg['role']}: {msg['message']}" for msg in dialog_messages]
-        dialogue =''.join(dialogue_messages)
-
-        question = await llm.rewrite_question_from_dialogue(question=question, dialogue=dialogue)
-
-        aspects = []  # список словарей, где каждый словарь - аспект с метаданными
-
-        logging.info("Выделяем аспекты из запроса")
-        # выделяем аспекты из запроса
-        aspects_text = await qdrant.extract_aspects_from_question(question)
-        for aspect in aspects_text:
-            aspects.append({"text": aspect, "dialog_id": dialog_id})
-
-        logging.info("Векторизуем аспекты")
-        # векторизуем аспекты
-        for aspect in aspects:
-            aspect["dense_vector"] = await asyncio.to_thread(embedder.embed, aspect["text"])
-
-        # [{text: str, dense_vector: list, dialog_id: str}, {}, ...] - aspects сейчас
-
-        logging.info("Поиск по qdrant")
-        # dense поиск по qdrant
-        closest_chunks = []
-        for aspect in aspects:
-            chunk = await qdrant.dense_search(aspect, topk=5)
-            closest_chunks.append(chunk)
-        # получаем список списков, где каждый список - тексты ближайших чанков для каждого аспекта
-
-        logging.info("Поиск по neo4j")
-        # поиск по neo4j. Получаем контекст
-        context = ""
-        for chunks in closest_chunks:
-            ctx = await neo.graph_context_from_chunks(chunks, dialog_id=dialog_id)
-            context += ctx.get("context_text", "")
-
-        logging.info("Запрос в LLM")
-        # по контексту делаем запрос в LLM
-        answer = await llm.answer_with_graph(question, context)
-        logging.info("Ответ получен")
-
-        ### Еще можно сделать формирование id ответа и потом id ответа тоже передавать
-
-        #оборачиваем в json и возвращаем
-        return JSONResponse(content={'answer': answer, 'dialogId': dialog_id}, status_code=200)
-
+        # Валидация и преобразование данных
+        logging.info("Получен запрос на обработку вопроса")
+        data_dict = data.model_dump()
+        dialog_id = data_dict["dialogId"]
+        dialog_messages = data_dict["dialogMessages"]
+        question = data_dict["question"]
+        
+        logging.info(f"Обработка вопроса для диалога {dialog_id}: {question[:100]}...")
+        
+        # Вызов сервиса для обработки запроса
+        # Вся бизнес-логика скрыта внутри сервиса
+        answer = await query_service.process_query(
+            question=question,
+            dialog_id=dialog_id,
+            dialog_messages=dialog_messages
+        )
+        
+        logging.info(f"Ответ сгенерирован для диалога {dialog_id}")
+        return JSONResponse(
+            content={
+                'answer': answer,
+                'dialogId': dialog_id
+            },
+            status_code=200
+        )
+        
     except Exception as e:
-        logging.error(f"Ошибка: {e}")
-        return JSONResponse(content={'message': f'Internal Server Error:\n{e}'}, status_code=500)
-
-
-
+        logging.error(f"Ошибка при обработке запроса: {e}")
+        return JSONResponse(
+            content={'message': f'Ошибка при обработке запроса:\n{e}'},
+            status_code=500
+        )

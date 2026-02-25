@@ -1,3 +1,15 @@
+"""
+Модуль для работы с векторной базой данных Qdrant.
+
+Этот модуль предоставляет интерфейс для:
+- Загрузки векторизованных чанков в Qdrant
+- Семантического поиска по векторной БД
+- Извлечения аспектов из вопросов через LLM
+
+Qdrant используется для хранения векторизованных чанков документов
+и быстрого поиска релевантных фрагментов по запросу пользователя.
+"""
+
 from qdrant_client import QdrantClient
 from qdrant_client import models as qm
 from qdrant_client.models import (
@@ -22,18 +34,34 @@ dotenv.load_dotenv()
 # Настройка логов
 setup_logger(__file__)
 
+# Инициализация клиента Qdrant
 client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_KEY"))
 
 
 class QInteracter:
+    """
+    Класс для взаимодействия с векторной БД Qdrant.
+    
+    Предоставляет методы для:
+    - Загрузки векторизованных чанков (создание коллекций по dialog_id)
+    - Семантического поиска по векторной БД
+    - Извлечения ключевых аспектов из вопросов
+    """
     def __init__(self, client=client):
         self.client = client
     
     async def extract_aspects_from_question(self, question: str) -> list[str]:
         """
-        Extract aspects from the question
-        :param question:
-        :return:
+        Извлекает ключевые аспекты из вопроса пользователя.
+        
+        Использует LLM для выделения основных тем и концепций,
+        которые нужно найти в базе знаний для ответа на вопрос.
+        
+        Args:
+            question: Вопрос пользователя
+            
+        Returns:
+            Список аспектов, разделенных символом "||"
         """
 
         logging.info("Извлечение аспектов из вопроса...")
@@ -50,10 +78,19 @@ class QInteracter:
     
     async def dense_search(self, query: dict, topk: int = 5) -> list[str]:
         """
-        Dense search. Возвращает только текст topk ближайших чанков
-        :param query: вектор запроса
-        :param topk:
-        :return:
+        Выполняет семантический поиск в векторной БД.
+        
+        Ищет top-k наиболее похожих чанков по векторному представлению запроса.
+        Поиск ограничен коллекцией, соответствующей dialog_id.
+        
+        Args:
+            query: Словарь с вектором запроса и dialog_id:
+                - dense_vector: векторное представление запроса
+                - dialog_id: идентификатор диалога (определяет коллекцию)
+            topk: Количество ближайших чанков для возврата
+            
+        Returns:
+            Список текстов найденных чанков
         """
 
         # фильтр. можно несколько использовать
@@ -78,10 +115,23 @@ class QInteracter:
     
     async def load_in_qdrant(self, chunks: list[dict]) -> None:
         """
-        Функция создает коллекцию по dialog_id и загружает в нее данные, если коллекции нет в БД. 
-        У каждого документа своя коллекция
-        :param chunks: Чанки документа(вектора)
-        :return:
+        Загружает векторизованные чанки в Qdrant.
+        
+        Для каждого диалога создается отдельная коллекция (если не существует).
+        Если коллекция уже существует, новые чанки добавляются к существующим.
+        
+        Структура чанка:
+        {
+            "text": str,
+            "dense_vector": list[float],
+            "dialog_id": str,
+            "file_id": str,
+            "file_name": str,
+            "chunk_id": str
+        }
+        
+        Args:
+            chunks: Список векторизованных чанков для загрузки
         """
         """
         Пока структура чанка такая: {text: str, dense_vector: list[float],
