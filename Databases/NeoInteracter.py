@@ -15,28 +15,10 @@ import asyncio
 import sys
 
 import logging
-from pathlib import Path
+from utils.MyLogs import setup_logger
 
-logs_dir = Path("/Logs")
-logs_dir.mkdir(parents=True, exist_ok=True)
-log_file = logs_dir / "neo.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-#     handlers=[
-#         logging.StreamHandler(sys.stdout)
-#     ]
-# )
+# Настройка логов
+setup_logger(__file__)
 
 
 load_dotenv()

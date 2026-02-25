@@ -13,48 +13,18 @@ from Handling.Chunker import Chunker
 
 import asyncio
 import uuid
-from pydantic import BaseModel
 
 import logging
-from pathlib import Path
-
 from typing import List
 import sys
+
+from ragPydantic import ContentItem, LoadRequest, DialogMessage, QueryRequest
+from utils.MyLogs import setup_logger
 
 dotenv.load_dotenv()
 
 # Настройка логов
-logs_dir = Path("/Logs")
-logs_dir.mkdir(parents=True, exist_ok=True)
-log_file = logs_dir / "rag.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-# Создание Pydantic классов
-class ContentItem(BaseModel):
-    fileId: str
-    fileName: str
-    text: str
-
-class LoadRequest(BaseModel):
-    content: List[ContentItem]
-    dialogId: str
-
-class DialogMessage(BaseModel):
-    message: str
-    role: str
-
-class QueryRequest(BaseModel):
-    dialogId: str
-    dialogMessages: List[DialogMessage]
-    question: str
+setup_logger(__file__)
 
 rag = fastapi.FastAPI()
 

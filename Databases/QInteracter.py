@@ -14,23 +14,13 @@ import os
 import dotenv
 
 import logging
-from pathlib import Path
 import sys
+from utils.MyLogs import setup_logger
 
 dotenv.load_dotenv()
 
-logs_dir = Path("/Logs")
-logs_dir.mkdir(parents=True, exist_ok=True)
-log_file = logs_dir / "qdrant.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Настройка логов
+setup_logger(__file__)
 
 client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_KEY"))
 

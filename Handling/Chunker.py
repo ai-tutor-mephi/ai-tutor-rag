@@ -2,20 +2,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 import sys
 import logging
-from pathlib import Path
+from utils.MyLogs import setup_logger
 
-logs_dir = Path("/Logs")
-logs_dir.mkdir(parents=True, exist_ok=True)
-log_file = logs_dir / "chunker.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Настройка логов
+setup_logger(__file__)
 
 class Chunker:
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
