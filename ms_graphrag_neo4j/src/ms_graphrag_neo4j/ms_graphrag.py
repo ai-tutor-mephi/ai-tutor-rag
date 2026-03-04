@@ -91,7 +91,7 @@ class MsGraphRAG:
         self.max_workers = max_workers
         self._database = database
         self._openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"),
-                                          base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+                                          base_url=os.environ.get("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"))
         # Test for APOC
         try:
             self.query("CALL apoc.help('test')")

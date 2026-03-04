@@ -37,7 +37,7 @@ class Chunker:
         # Инициализация разбивателя с приоритетными разделителями
         self.splitter = RecursiveCharacterTextSplitter(
             separators=["\n\n", "\n", ". ", " ", "", "? ", "! "],
-            chunk_size=self.chunk_size,
+                                                       chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap
         )
     

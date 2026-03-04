@@ -17,6 +17,7 @@ from Handling.Embedder import Embedder
 from Databases.QInteracter import QInteracter
 from Databases.NeoInteracter import NeoInteracter
 from LLM.LLMAnswer import LLM
+from LLM.Agent import Agent
 
 
 class QueryService:
@@ -51,6 +52,7 @@ class QueryService:
         self.qdrant = qdrant
         self.neo = neo
         self.llm = llm
+        self.agent = Agent()
     
     async def process_query(
         self,
@@ -79,27 +81,7 @@ class QueryService:
         """
         logging.info(f"Обработка запроса для диалога {dialog_id}")
         
-        # Шаг 1: Перефразирование вопроса с учетом контекста диалога
-        rewritten_question = await self._rewrite_question(question, dialog_messages)
-        logging.info(f"Вопрос перефразирован: {rewritten_question}")
-        
-        # Шаг 2: Извлечение аспектов из перефразированного вопроса
-        aspects = await self._extract_aspects(rewritten_question, dialog_id)
-        logging.info(f"Извлечено {len(aspects)} аспектов из вопроса")
-        
-        # Шаг 3: Поиск релевантных чанков для каждого аспекта
-        relevant_chunks = await self._search_relevant_chunks(aspects)
-        logging.info(f"Найдено {len(relevant_chunks)} групп релевантных чанков")
-        
-        # Шаг 4: Построение графового контекста
-        context = await self._build_graph_context(relevant_chunks, dialog_id)
-        logging.info(f"Графовый контекст построен (длина: {len(context)} символов)")
-        
-        # Шаг 5: Генерация финального ответа
-        answer = await self._generate_answer(rewritten_question, context)
-        logging.info("Ответ сгенерирован")
-        
-        return answer
+        return await self.agent.run(question, dialog_id, dialog_messages)
     
     async def _rewrite_question(
         self,

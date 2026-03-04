@@ -34,7 +34,7 @@ driver = GraphDatabase.driver(
     auth=(os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
 )
 ms = MsGraphRAG(driver=driver, model=os.getenv("MS_GRAPHRAG_MODEL", "openai/gpt-oss-20b"))
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_API_BASE_URL"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"))
 
 
 class LLM:

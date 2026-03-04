@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from types import List
+from typing import List
 
 # Создание Pydantic классов
 class ContentItem(BaseModel):

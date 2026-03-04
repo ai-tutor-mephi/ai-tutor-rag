@@ -65,7 +65,7 @@ class QInteracter:
         """
 
         logging.info("Извлечение аспектов из вопроса...")
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_API_BASE_URL"))
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"))
         resp = client.chat.completions.create(
             model=os.getenv("MS_LIGHT_MODEL"),
             messages=[
