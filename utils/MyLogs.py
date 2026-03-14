@@ -15,8 +15,24 @@ def setup_logger(file_path: str):
     # Определяем имя файла без расширения из пути
     file_name = Path(file_path).stem
     
-    # Создаем директорию для логов
-    logs_dir = Path("/Logs")
+    # Создаем директорию для логов относительно корня проекта
+    # Определяем корень проекта: ищем директорию с utils/ или поднимаемся до корня
+    file_path_obj = Path(file_path).resolve()
+    current = file_path_obj.parent
+    
+    # Ищем корень проекта (где находится utils/ или другие характерные файлы)
+    # Поднимаемся вверх, пока не найдем директорию с utils/
+    project_root = current
+    while project_root != project_root.parent:
+        if (project_root / "utils").exists() or (project_root / "requirements.txt").exists():
+            break
+        project_root = project_root.parent
+    
+    # Если не нашли, используем директорию на 2 уровня выше от файла
+    if project_root == project_root.parent:
+        project_root = file_path_obj.parent.parent
+    
+    logs_dir = project_root / "Logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_file = logs_dir / f"{file_name}.log"
     
