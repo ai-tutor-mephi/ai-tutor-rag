@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict, Annotated
 from typing import List, Dict, Optional, Literal
-
+from guardrails_config import input_guard
 
 import os
 from dotenv import load_dotenv
@@ -33,7 +33,50 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     dialog_id: str
     dialog_messages: List[Dict]
+    input_is_safe: bool
 
+def reject_input_node(state: AgentState) -> AgentState:
+    """
+    Узел для отклонения небезопасных входных сообщений.
+    """
+    messages = state["messages"]
+
+    messages.append(
+        AIMessage(
+            content=(
+                "Запрос выглядит небезопасным или похожим на попытку обойти ограничения. "
+                "Переформулируй его обычным способом: просто опиши, что именно тебе нужно."
+            )
+        )
+    )
+
+    return {
+        **state,
+        "messages": messages,
+    }
+
+
+def input_guard_node(state: AgentState) -> dict:
+    """
+    Проверяет входное сообщение пользователя и сохраняет результат в state.
+    """
+    messages = state["messages"]
+    last_message = messages[-1]
+
+    user_text = last_message.content if hasattr(last_message, "content") else str(last_message)
+    result = input_guard.validate(user_text)
+
+    return {
+        "input_is_safe": result.outcome == "pass"
+    }
+
+def route_after_guard(state: AgentState) -> Literal["agent", "reject_input"]:
+    """
+    Определяет, куда переходить после проверки input_guard.
+    """
+    # По умолчанию считаем ввод безопасным, если флаг не установлен
+    is_safe = state.get("input_is_safe", True)
+    return "agent" if is_safe else "reject_input"
 
 def create_agent_node(llm: ChatOpenAI, tools: list):
     """
@@ -124,9 +167,24 @@ class Agent:
         # Добавляем узлы
         graph.add_node("agent", self.agent_node)
         graph.add_node("tools", self.tool_node)
-        
-        # Определяем поток выполнения
-        graph.add_edge(START, "agent")
+        graph.add_node("input_guard", input_guard_node)
+        graph.add_node("reject_input", reject_input_node)
+
+        # Сначала проверяем ввод через guardrail
+        graph.add_edge(START, "input_guard")
+
+        # Ветвление после проверки: либо к агенту, либо к сообщению-отказу
+        graph.add_conditional_edges(
+            "input_guard",
+            route_after_guard,
+            {
+                "agent": "agent",
+                "reject_input": "reject_input",
+            },
+        )
+
+        # После сообщения-отказа завершаем выполнение графа
+        graph.add_edge("reject_input", END)
         
         # Условный переход: агент решает, вызывать ли инструменты
         graph.add_conditional_edges(

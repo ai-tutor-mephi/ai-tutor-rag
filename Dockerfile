@@ -2,41 +2,53 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 1. Сначала ставим системные зависимости (если нужны) и обновляем pip
+# build arg для токена Guardrails Hub
+ARG GUARDRAILS_TOKEN
+
+# базовые зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --upgrade pip
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2. Устанавливаем PyTorch (ОДИН РАЗ).
-# Версий 2.8/2.9 нет, ставим актуальную стабильную CPU-версию.
-# Это самая тяжелая часть, делаем её в начале для кэша.
+# обновляем pip
+RUN pip install --no-cache-dir --upgrade pip
+
+# ставим Guardrails
+RUN pip install --no-cache-dir "guardrails-ai"
+
+# headless-настройка Guardrails CLI без интерактива
+RUN guardrails configure \
+    --token "${GUARDRAILS_TOKEN}" \
+    --disable-metrics \
+    --disable-remote-inferencing
+
+# ставим нужный валидатор из Hub
+RUN guardrails hub install hub://guardrails/detect_jailbreak
+
+# PyTorch CPU
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# 3. Копируем и устанавливаем остальные зависимости
+# зависимости проекта
 COPY requirements.txt .
-
-# ВАЖНО: Если в requirements.txt есть строчка 'torch', она может сломать сборку.
-# Эта команда попытается установить пакеты, не обновляя уже установленный torch.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Настройка окружения HuggingFace
+# HuggingFace cache
 ENV HF_HOME=/root/.cache/huggingface
 RUN mkdir -p $HF_HOME
 
-# 5. Предзагружаем модель (Тест импорта torch и скачивание весов)
-# Если здесь упадет — значит проблема в нехватке памяти (см. совет про .wslconfig выше)
+# предзагрузка модели
 RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); \
-    from transformers import AutoTokenizer, AutoModel; \
-    model_id='BAAI/bge-m3'; \
-    AutoTokenizer.from_pretrained(model_id); \
-    AutoModel.from_pretrained(model_id)"
+from transformers import AutoTokenizer, AutoModel; \
+model_id='BAAI/bge-m3'; \
+AutoTokenizer.from_pretrained(model_id); \
+AutoModel.from_pretrained(model_id)"
 
-# 6. Установка вашего локального модуля
+# локальный модуль
 COPY ms_graphrag_neo4j ./ms_graphrag_neo4j
 RUN pip install -e ./ms_graphrag_neo4j
 
-# 7. Копируем остальной код проекта
+# остальной код
 COPY . .
 
 EXPOSE 8000

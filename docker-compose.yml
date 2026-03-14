@@ -54,6 +54,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
     container_name: rag
     # restart: unless-stopped
     depends_on:
