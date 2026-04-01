@@ -50,6 +50,31 @@ services:
       timeout: 5s
       retries: 30
 
+  guardrails-server:
+    build:
+      context: .
+      dockerfile: Dockerfile_Guardrails
+      args:
+        GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
+    container_name: guardrails-server
+    # restart: unless-stopped
+    networks:
+      - ai_tutor_network
+    command:
+      - "guardrails"
+      - "start"
+      - "--config"
+      - "guardrails_config.py"
+      - "--port"
+      - "8001"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
+      GUARDRAILS_GUARD_NAME: detect_jailbreak_guard
+    ports:
+      - "8001:8001"
+
   app:
     build:
       context: .
@@ -74,6 +99,8 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MS_GRAPHRAG_MODEL: ${MS_GRAPHRAG_MODEL}
       MS_LIGHT_MODEL: ${MS_LIGHT_MODEL}
+      GUARDRAILS_SERVER_URL: http://guardrails-server:8001
+      GUARDRAILS_SERVER_TOKEN: ${GUARDRAILS_TOKEN}
     volumes:
       - ./hf_cache:/root/.cache/huggingface
       - ./Logs:/Logs

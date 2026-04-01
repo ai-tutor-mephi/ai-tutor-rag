@@ -1,0 +1,48 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# build arg для токена Guardrails Hub
+ARG GUARDRAILS_TOKEN
+
+# базовые зависимости
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# обновляем pip
+RUN pip install --no-cache-dir --upgrade pip
+
+# ставим Guardrails
+RUN pip install --no-cache-dir "guardrails-ai[api]" && \
+    pip install --no-cache-dir --force-reinstall "rich<14.3"
+
+# Для запуска ASGI приложения через gunicorn
+RUN pip install --no-cache-dir gunicorn uvicorn
+
+# headless-настройка Guardrails CLI без интерактива
+# Токен нужен только для установки валидаторов и remote inference.
+RUN if [ -n "${GUARDRAILS_TOKEN}" ]; then \
+      guardrails configure \
+        --token "${GUARDRAILS_TOKEN}" \
+        --disable-metrics \
+        --disable-remote-inferencing ; \
+    else \
+      echo "GUARDRAILS_TOKEN not set, skipping guardrails configure"; \
+    fi
+
+# ставим нужный валидатор из Hub только при наличии токена
+RUN if [ -n "${GUARDRAILS_TOKEN}" ]; then \
+      guardrails hub install hub://guardrails/detect_jailbreak ; \
+    else \
+      echo "GUARDRAILS_TOKEN not set, skipping guardrails hub install"; \
+    fi
+
+# локальный модуль
+COPY guardrails_config.py .
+
+EXPOSE 8001
+
+CMD gunicorn --bind 0.0.0.0:8001 --timeout=180 --workers=2 -k uvicorn.workers.UvicornWorker "guardrails_api.app:create_app(None, 'guardrails_config.py', 8001)"
+

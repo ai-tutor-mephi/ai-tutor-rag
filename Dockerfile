@@ -14,18 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # обновляем pip
 RUN pip install --no-cache-dir --upgrade pip
 
-# ставим Guardrails
-RUN pip install --no-cache-dir "guardrails-ai"
-
-# headless-настройка Guardrails CLI без интерактива
-RUN guardrails configure \
-    --token "${GUARDRAILS_TOKEN}" \
-    --disable-metrics \
-    --disable-remote-inferencing
-
-# ставим нужный валидатор из Hub
-RUN guardrails hub install hub://guardrails/detect_jailbreak
-
 # PyTorch CPU
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
