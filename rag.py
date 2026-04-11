@@ -15,18 +15,19 @@ from fastapi.responses import JSONResponse
 import dotenv
 import logging
 
-from ragPydantic import LoadRequest, QueryRequest
-from utils.MyLogs import setup_logger
+from src.utils.ragPydantic import LoadRequest, QueryRequest, TestsRequest
+from src.utils.MyLogs import setup_logger
 
 # Импорт сервисов для бизнес-логики
-from services import LoadService, QueryService
+from src.services import LoadService, QueryService
 
 # Импорт классов для инициализации сервисов
-from Handling.Embedder import Embedder
-from Handling.Chunker import Chunker
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
-from LLM.LLMAnswer import LLM
+from src.Handling.Embedder import Embedder
+from src.Handling.Chunker import Chunker
+from src.Databases.QInteracter import QInteracter
+from src.Databases.NeoInteracter import NeoInteracter
+from src.LLM.LLMAnswer import LLM
+from src.services.test_generation_service import generate_tests
 
 # Загрузка переменных окружения
 dotenv.load_dotenv()
@@ -63,6 +64,37 @@ query_service = QueryService(
     neo=neo,
     llm=llm
 )
+
+
+@rag.post("/tests")
+async def create_tests(data: TestsRequest) -> JSONResponse:
+    """
+    Эндпоинт для создания тестов для диалога.
+    
+    Принимает идентификатор диалога и историю диалога и создает тесты для диалога.
+    """
+    try:
+        logging.info("Получен запрос на создание тестов для диалога")
+        data_dict = data.model_dump()
+        dialog_id = data_dict['dialogId']
+        dialog_messages = data_dict['dialogMessages']
+    except Exception as e:
+        logging.error(f"Не корректный запрос: {e}")
+        return JSONResponse(
+            content={'message': f'Не корректный запрос:\n{e}'},
+            status_code=400
+        )
+    
+    try:
+        tests = await generate_tests(dialog_messages, neo, dialog_id)
+    except Exception as e:
+        logging.error(f"Ошибка при создании тестов для диалога: {e}")
+        return JSONResponse(
+            content={'message': f'Не удалось создать тесты для диалога:\n{e}'},
+            status_code=500
+        )
+    
+    return JSONResponse(content=tests, status_code=200)
 
 
 @rag.post("/load")

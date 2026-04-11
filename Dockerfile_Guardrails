@@ -14,9 +14,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # обновляем pip
 RUN pip install --no-cache-dir --upgrade pip
 
-# ставим Guardrails
-RUN pip install --no-cache-dir "guardrails-ai[api]" && \
+# ставим Guardrails (0.9.3 — флаг --no-install-local-models для fallback при сборке)
+RUN pip install --no-cache-dir "guardrails-ai[api]==0.9.3" && \
     pip install --no-cache-dir --force-reinstall "rich<14.3"
+
+RUN mkdir -p /root/.cache/huggingface/hub
+ENV HF_HOME=/root/.cache/huggingface
+# guardrails-grhub-detect-jailbreak требует transformers>=4.40 — пинать 4.38 нельзя (ResolutionImpossible).
+# Свежий huggingface_hub 1.x даёт StrictDataclassFieldValidationError на id2label у zhx123/ftrobertallm — держим hub 0.x.
+ENV PIP_CONSTRAINT=/constraints.txt
+RUN printf '%s\n' 'huggingface_hub>=0.23.2,<1.0' > /constraints.txt
 
 # Для запуска ASGI приложения через gunicorn
 RUN pip install --no-cache-dir gunicorn uvicorn
@@ -32,9 +39,13 @@ RUN if [ -n "${GUARDRAILS_TOKEN}" ]; then \
       echo "GUARDRAILS_TOKEN not set, skipping guardrails configure"; \
     fi
 
-# ставим нужный валидатор из Hub только при наличии токена
+# Сначала опускаем hub с 1.x (подтягивается guardrails-ai), иначе nested pip при hub install снова упрётся в конфликт/strict.
+# После установки валидатора ещё раз фиксируем hub 0.x (transformers пусть остаётся >=4.40 от detect_jailbreak).
 RUN if [ -n "${GUARDRAILS_TOKEN}" ]; then \
-      guardrails hub install hub://guardrails/detect_jailbreak ; \
+      pip install --no-cache-dir "huggingface_hub>=0.23.2,<1.0" && \
+      ( guardrails hub install hub://guardrails/detect_jailbreak || \
+        guardrails hub install hub://guardrails/detect_jailbreak --no-install-local-models ) && \
+      pip install --no-cache-dir --force-reinstall "huggingface_hub>=0.23.2,<1.0" ; \
     else \
       echo "GUARDRAILS_TOKEN not set, skipping guardrails hub install"; \
     fi
@@ -44,5 +55,7 @@ COPY guardrails_config.py .
 
 EXPOSE 8001
 
-CMD gunicorn --bind 0.0.0.0:8001 --timeout=180 --workers=2 -k uvicorn.workers.UvicornWorker "guardrails_api.app:create_app(None, 'guardrails_config.py', 8001)"
+# Один воркер: DetectJailbreak грузит несколько тяжёлых моделей; при workers=2 оба висят на CPU/диске,
+# очередь gunicorn не отдаёт ответ → curl и rag ждут бесконечно / ReadTimeout.
+CMD gunicorn --bind 0.0.0.0:8001 --timeout=300 --graceful-timeout=60 --workers=1 -k uvicorn.workers.UvicornWorker "guardrails_api.app:create_app(None, 'guardrails_config.py', 8001)"
 

@@ -11,6 +11,3 @@ try:
     input_guard = Guard(name="input_guard").use(DetectJailbreak(on_fail="noop"))
 except Exception:
     input_guard = Guard(name="input_guard")
-
-
-

@@ -168,3 +168,26 @@ User: "The CEO of the tech company mentioned in the first document."
 Question: "What is their background?"  
 Rewritten Question: "What is the background of the CEO of the tech company mentioned in the first document?"
 """
+
+
+TESTS_GENERATION_SYS = """You are an expert tutor. Build a short practice test from the dialogue and optional graph hints.
+
+Rules:
+- Base questions ONLY on facts that appear in the dialogue (or in the graph entity hints if the dialogue is empty).
+- Do not invent facts. If material is thin, output fewer questions (minimum 1) and a modest test_name.
+- Each question is multiple choice: exactly 4 strings in "variants"; "gold_answer" MUST be identical to one of them.
+- Same language as most of the dialogue (or Russian if mixed/unclear).
+- Do not mention graphs, databases, RAG, tools, or internal systems.
+
+Output MUST be one JSON object only — no markdown fences, no commentary before or after. Schema:
+{
+  "test_name": "string, short title",
+  "questions": [
+    {
+      "question": "string",
+      "variants": ["A", "B", "C", "D"],
+      "gold_answer": "must equal exactly one entry in variants"
+    }
+  ]
+}
+"""

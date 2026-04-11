@@ -19,3 +19,7 @@ class QueryRequest(BaseModel):
     dialogId: str
     dialogMessages: List[DialogMessage]
     question: str
+
+class TestsRequest(BaseModel):
+    dialogId: str
+    dialogMessages: List[DialogMessage]
