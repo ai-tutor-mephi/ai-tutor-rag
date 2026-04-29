@@ -16,12 +16,9 @@ from neo4j import GraphDatabase
 from openai import OpenAI
 from .Prompts import CONTEXT_SYS, REWRITE_QUESTION_SYS
 
-import sys
 import logging
-from utils.MyLogs import setup_logger
 
-# Настройка логов
-setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 model = os.getenv("MS_GRAPHRAG_MODEL")
@@ -78,14 +75,14 @@ class LLM:
 
         user_prompt = f"Question: {question}\n\nGraph Context:\n{graph_context_text}"
 
-        logging.info(f"Обращаемся с промптом: {user_prompt}\n к модели {self.model}")
+        logger.info(f"Обращаемся с промптом: {user_prompt}\n к модели {self.model}")
         resp = await self.ms.achat(
             messages=[{"role": "system", "content": CONTEXT_SYS},
                     {"role": "user", "content": user_prompt}],
             model=self.model
         )
         answer = resp.content
-        logging.info(f"Ответ модели: {answer}")
+        logger.info(f"Ответ модели: {answer}")
         return answer
 
 
@@ -106,7 +103,7 @@ class LLM:
             Перефразированный вопрос
         """
 
-        logging.info(f"Перефразируем вопрос: {question}\n на основе диалога: {dialogue}\n модель: {self.light_model}")
+        logger.info(f"Перефразируем вопрос: {question}\n на основе диалога: {dialogue}\n модель: {self.light_model}")
         resp = self.client.chat.completions.create(
             model=self.light_model,
             messages=[
@@ -116,7 +113,7 @@ class LLM:
         )
         answer = resp.choices[0].message.content
 
-        logging.info(f"Перефразированный вопрос: {answer}")
+        logger.info(f"Перефразированный вопрос: {answer}")
         return answer
 
 

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Dict, List, Optional
 
@@ -13,9 +14,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from LLM.LLMAnswer import LLM
-from LLM.Nodes.Helpers import _dialog_dicts_to_lc_messages, _make_logged_tools_node
-from LLM.Nodes.Nodes import (
+from .LLMAnswer import LLM
+from .Nodes.Helpers import _dialog_dicts_to_lc_messages, _make_logged_tools_node
+from .Nodes.Nodes import (
     AgentState,
     create_agent_node,
     input_guard_node,
@@ -23,13 +24,12 @@ from LLM.Nodes.Nodes import (
     route_after_guard,
     should_continue,
 )
-from LLM.Prompts import AGENT_CONTEXT_SYS
-from utils.MyLogs import setup_logger
-from utils.Tools import tools
+from .Prompts import AGENT_CONTEXT_SYS
+from ..utils.Tools import tools
 
 load_dotenv()
 
-logger = setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class Agent:

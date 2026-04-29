@@ -16,6 +16,10 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from logging_setup import configure_logging
+
+configure_logging()
+
 # Устанавливаем переменные окружения для тестов, чтобы избежать подключений к БД
 # Neo4j и Qdrant будут мокироваться в тестах
 if not os.getenv("NEO4J_URI"):

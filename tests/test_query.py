@@ -12,12 +12,12 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch, Mock
 from typing import List, Dict
 
-from services.query_service import QueryService
-from Handling.Embedder import Embedder
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
-from LLM.LLMAnswer import LLM
-from LLM.Agent import Agent
+from src.services.query_service import QueryService
+from src.Handling.Embedder import Embedder
+from src.Databases.QInteracter import QInteracter
+from src.Databases.NeoInteracter import NeoInteracter
+from src.LLM.LLMAnswer import LLM
+from src.LLM.Agent import Agent
 
 MIN_OUTPUT_TOKENS = 5
 
@@ -64,7 +64,7 @@ def query_service(mock_embedder, mock_qdrant, mock_neo, mock_llm):
         llm=mock_llm
     )
     # Мокаем Agent с ограничением токенов
-    with patch('services.query_service.Agent') as mock_agent_class:
+    with patch('src.services.query_service.Agent') as mock_agent_class:
         mock_agent = MagicMock(spec=Agent)
         mock_agent.run = AsyncMock(return_value="Тестовый ответ")
         mock_agent_class.return_value = mock_agent
@@ -141,7 +141,7 @@ class TestQueryServiceWithLimitedTokens:
     """Тесты для QueryService с ограничением токенов для генерации."""
     
     @pytest.mark.asyncio
-    @patch('LLM.Agent.ChatOpenAI')
+    @patch('src.LLM.Agent.ChatOpenAI')
     async def test_agent_with_limited_tokens(self, mock_chat_openai):
         """Тест: Agent с моком ChatOpenAI возвращает ответ"""
         mock_chat_llm_instance = MagicMock()
@@ -173,7 +173,7 @@ class TestQueryServiceWithLimitedTokens:
         assert len(answer) > 0
     
     @pytest.mark.asyncio
-    @patch('LLM.LLMAnswer.MsGraphRAG')
+    @patch('src.LLM.LLMAnswer.MsGraphRAG')
     async def test_llm_answer_with_limited_tokens(self, mock_ms_graphrag_class):
         """Тест: LLM.answer_with_graph использует ограничение токенов через патч."""
         # Создаем мок для MsGraphRAG
@@ -193,7 +193,7 @@ class TestQueryServiceWithLimitedTokens:
         mock_ms_graphrag_class.return_value = mock_ms
         
         # Создаем LLM с моками
-        with patch('LLM.LLMAnswer.GraphDatabase') as mock_graph_db:
+        with patch('src.LLM.LLMAnswer.GraphDatabase') as mock_graph_db:
             mock_driver = MagicMock()
             mock_graph_db.driver.return_value = mock_driver
             
@@ -212,7 +212,7 @@ class TestQueryServiceWithLimitedTokens:
             mock_ms.achat.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('LLM.LLMAnswer.OpenAI')
+    @patch('src.LLM.LLMAnswer.OpenAI')
     async def test_llm_rewrite_with_limited_tokens(self, mock_openai_class):
         """Тест: LLM.rewrite_question_from_dialogue вызывает API и возвращает перефразированный вопрос."""
         mock_client = MagicMock()
@@ -224,8 +224,8 @@ class TestQueryServiceWithLimitedTokens:
         mock_client.chat.completions.create = MagicMock(return_value=mock_response)
         mock_openai_class.return_value = mock_client
         
-        with patch('LLM.LLMAnswer.GraphDatabase') as mock_graph_db, \
-             patch('LLM.LLMAnswer.MsGraphRAG') as mock_ms_graphrag:
+        with patch('src.LLM.LLMAnswer.GraphDatabase') as mock_graph_db, \
+             patch('src.LLM.LLMAnswer.MsGraphRAG') as mock_ms_graphrag:
             mock_driver = MagicMock()
             mock_graph_db.driver.return_value = mock_driver
             mock_ms = MagicMock()
@@ -254,10 +254,10 @@ class TestQueryServiceIntegration:
         # Помечен как integration и может быть пропущен в обычных тестах
         
         # Инициализируем реальные сервисы
-        from Handling.Embedder import Embedder
-        from Databases.QInteracter import QInteracter
-        from Databases.NeoInteracter import NeoInteracter
-        from LLM.LLMAnswer import LLM
+        from src.Handling.Embedder import Embedder
+        from src.Databases.QInteracter import QInteracter
+        from src.Databases.NeoInteracter import NeoInteracter
+        from src.LLM.LLMAnswer import LLM
         
         embedder = Embedder()
         qdrant = QInteracter()
@@ -265,7 +265,7 @@ class TestQueryServiceIntegration:
         
         # Создаем LLM с ограничением токенов для тестов
         # Модифицируем MsGraphRAG для передачи max_tokens
-        with patch('LLM.LLMAnswer.MsGraphRAG') as mock_ms_class:
+        with patch('src.LLM.LLMAnswer.MsGraphRAG') as mock_ms_class:
             mock_ms = MagicMock()
             mock_response = MagicMock()
             mock_response.content = "Тестовый ответ с ограниченными токенами."
@@ -302,9 +302,9 @@ class TestQueryServiceIntegration:
 def query_service_with_token_limits(mock_embedder, mock_qdrant, mock_neo):
     """Фикстура для QueryService с ограничением токенов через патчи."""
     # Создаем LLM с патчингом для ограничения токенов
-    with patch('LLM.LLMAnswer.MsGraphRAG') as mock_ms_class, \
-         patch('LLM.LLMAnswer.OpenAI') as mock_openai_class, \
-         patch('LLM.LLMAnswer.GraphDatabase') as mock_graph_db:
+    with patch('src.LLM.LLMAnswer.MsGraphRAG') as mock_ms_class, \
+         patch('src.LLM.LLMAnswer.OpenAI') as mock_openai_class, \
+         patch('src.LLM.LLMAnswer.GraphDatabase') as mock_graph_db:
         
         # Настраиваем моки
         mock_driver = MagicMock()
@@ -350,8 +350,8 @@ def query_service_with_token_limits(mock_embedder, mock_qdrant, mock_neo):
         )
         
         # Мокаем Agent с ограничением токенов через патч ChatOpenAI
-        with patch('services.query_service.Agent') as mock_agent_class, \
-             patch('LLM.Agent.ChatOpenAI') as mock_chat_openai:
+        with patch('src.services.query_service.Agent') as mock_agent_class, \
+             patch('src.LLM.Agent.ChatOpenAI') as mock_chat_openai:
             mock_chat_llm = MagicMock()
             mock_chat_llm.bind_tools = MagicMock(return_value=mock_chat_llm)
             mock_chat_llm.ainvoke = AsyncMock(return_value=MagicMock(

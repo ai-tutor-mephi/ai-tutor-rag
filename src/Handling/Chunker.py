@@ -8,12 +8,9 @@
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-import sys
 import logging
-from utils.MyLogs import setup_logger
 
-# Настройка логов
-setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class Chunker:
@@ -44,13 +41,13 @@ class Chunker:
 
     def make_chunks_from_text(self, text: str) -> list[str] | None:
         try:
-            logging.info("Создание чанков из текста...")
+            logger.info("Создание чанков из текста...")
 
             chunks = self.splitter.split_text(text)
 
-            logging.info(f"Чанки успешно созданы. Количество чанков: {len(chunks)}")
+            logger.info("Чанки успешно созданы. Количество чанков: %s", len(chunks))
             return chunks
 
         except Exception as e:
-            logging.error(f"Не удалось создать чанки: {e}")
+            logger.error("Не удалось создать чанки: %s", e)
             return []

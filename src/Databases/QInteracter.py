@@ -20,19 +20,16 @@ from qdrant_client.models import (
 from qdrant_client.http.models import PointStruct
 from openai import OpenAI
 
-from LLM.Prompts import ASPECTS_SYS
+from ..LLM.Prompts import ASPECTS_SYS
 
 import os
 import dotenv
 
 import logging
-import sys
-from utils.MyLogs import setup_logger
 
 dotenv.load_dotenv()
 
-# Настройка логов
-setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 # Инициализация клиента Qdrant
 client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_KEY"))
@@ -64,7 +61,7 @@ class QInteracter:
             Список аспектов, разделенных символом "||"
         """
 
-        logging.info("Извлечение аспектов из вопроса...")
+        logger.info("Извлечение аспектов из вопроса...")
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"))
         resp = client.chat.completions.create(
             model=os.getenv("MS_LIGHT_MODEL"),
@@ -73,7 +70,7 @@ class QInteracter:
                 {"role": "user", "content": question}
             ]
         )
-        logging.info(f"Ответ модели для извлечения аспектов: {resp.choices[0].message.content}")
+        logger.info(f"Ответ модели для извлечения аспектов: {resp.choices[0].message.content}")
         return resp.choices[0].message.content.split("||")
     
     async def dense_search(self, query: dict, topk: int = 5) -> list[str]:
@@ -99,7 +96,7 @@ class QInteracter:
         )
 
         # запрос. Также тут поддерживается фукнция поиска по нескольким запросам сразу, если чуть поменять
-        logging.info("Выполнение dense поиска...")
+        logger.info("Выполнение dense поиска...")
 
         resp = self.client.query_points(collection_name=query.get("dialog_id"), 
                                         query=query.get("dense_vector"),
@@ -110,7 +107,7 @@ class QInteracter:
                                         with_vectors=False)
         points = resp.points  # берем результаты первого (и единственного) запроса
         
-        logging.info(f"Найдено {len(points)} ближайших чанков. Тексты чанков: {[p.payload.get('text','')[:100]+'...' for p in points]}")
+        logger.info(f"Найдено {len(points)} ближайших чанков. Тексты чанков: {[p.payload.get('text','')[:100]+'...' for p in points]}")
         return [p.payload.get("text", "") for p in points]
     
     async def load_in_qdrant(self, chunks: list[dict]) -> None:
@@ -169,7 +166,7 @@ class QInteracter:
         
         
         if client.collection_exists(collection_name=dialog_id):
-            logging.info(f"Коллекция {dialog_id} уже существует. Добавление новых данных...")
+            logger.info(f"Коллекция {dialog_id} уже существует. Добавление новых данных...")
             client.upsert(collection_name=dialog_id, points=points)
             return
 
@@ -177,7 +174,7 @@ class QInteracter:
         else:
             # создать коллекцию
             # Для каждого диалога своя коллекция
-            logging.info(f"Создание коллекции в Qdrant для диалога {dialog_id}...")
+            logger.info(f"Создание коллекции в Qdrant для диалога {dialog_id}...")
             client.create_collection(
                 collection_name=dialog_id,  # коллекцию называем по идентификатору диалога, возможно, потом по другому
                 vectors_config={
@@ -188,15 +185,15 @@ class QInteracter:
                     default_segment_number=2
                 ),
             )
-            logging.info(f"Коллекция {dialog_id} создана.")
+            logger.info(f"Коллекция {dialog_id} создана.")
 
-            logging.info(f"Создание индекса для метаданных в Qdrant для диалога {dialog_id}...")
+            logger.info(f"Создание индекса для метаданных в Qdrant для диалога {dialog_id}...")
             client.create_payload_index(
                 collection_name=dialog_id,
                 field_name="dialog_id",
                 field_schema=PayloadSchemaType.KEYWORD
             )
-            logging.info(f"Загрузка {len(points)} точек в коллекцию {dialog_id}...")
+            logger.info(f"Загрузка {len(points)} точек в коллекцию {dialog_id}...")
             client.upsert(collection_name=dialog_id, points=points)
             return
 

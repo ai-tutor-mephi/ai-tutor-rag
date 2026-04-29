@@ -10,11 +10,8 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 
 import logging
-import sys
-from utils.MyLogs import setup_logger
 
-# Настройка логов
-setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 # Инициализация модели для векторизации
 model_id = "BAAI/bge-m3"
@@ -60,7 +57,7 @@ class Embedder:
         Returns:
             Список чисел (вектор) размерностью модели
         """
-        logging.info("Векторизация текста...")
+        logger.info("Векторизация текста...")
         input = self.tokenizer(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             embedding = self.model(**input).last_hidden_state
@@ -69,6 +66,10 @@ class Embedder:
         embedding = torch.nn.functional.normalize(embedding, p=2, dim=0)  # l2 norm
         embedding = embedding.tolist()  # list[float]
 
-        logging.info(f"Текст векторизован.\n{embedding[:5]}... (всего {len(embedding)} чисел)")
+        logger.info(
+            "Текст векторизован. Первые 5 значений: %s... (всего %s чисел)",
+            embedding[:5],
+            len(embedding),
+        )
         return embedding
     

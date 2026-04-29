@@ -14,12 +14,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from Databases.NeoInteracter import NeoInteracter
-from LLM.Nodes.Helpers import _dialog_dicts_to_lc_messages
-from LLM.Prompts import TESTS_GENERATION_SYS
-from utils.MyLogs import setup_logger
-
-logger = setup_logger(__file__)
+from ..Databases.NeoInteracter import NeoInteracter
+from ..LLM.Nodes.Helpers import _dialog_dicts_to_lc_messages
+from ..LLM.Prompts import TESTS_GENERATION_SYS
+logger = logging.getLogger(__name__)
 
 
 class Question(BaseModel):
@@ -103,6 +101,7 @@ async def generate_tests(
 
     try:
         entities = get_random_entities(neo, dialog_id, n=10)
+        logger.info(f"Случайные сущности графа: {entities}")
     except Exception:
         logger.exception("get_random_entities failed dialog_id=%s", dialog_id)
         entities = []
@@ -137,7 +136,7 @@ async def generate_tests(
             return out.model_dump()
         return TestsResponse.model_validate(out).model_dump()
     except Exception as e:
-        logging.warning("structured output failed (%s), falling back to raw JSON parse", e)
+        logger.warning("structured output failed (%s), falling back to raw JSON parse", e)
 
     raw = await chat.ainvoke([sys_msg, human_msg])
     content = raw.content

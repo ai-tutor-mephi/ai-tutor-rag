@@ -6,17 +6,16 @@ import dotenv
 import asyncio
 from langchain_core.tools import tool
 
-from utils.MyLogs import setup_logger
+import logging
 
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
-from Handling.Embedder import Embedder
+from ..Databases.QInteracter import QInteracter
+from ..Databases.NeoInteracter import NeoInteracter
+from ..Handling.Embedder import Embedder
 
 
 dotenv.load_dotenv()
 
-# Настройка логов
-logger = setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class DialogMessage(BaseModel):

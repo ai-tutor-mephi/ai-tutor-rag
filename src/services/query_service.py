@@ -13,11 +13,13 @@ import asyncio
 import logging
 from typing import List, Dict
 
-from Handling.Embedder import Embedder
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
-from LLM.LLMAnswer import LLM
-from LLM.Agent import Agent
+from ..Handling.Embedder import Embedder
+from ..Databases.QInteracter import QInteracter
+from ..Databases.NeoInteracter import NeoInteracter
+from ..LLM.LLMAnswer import LLM
+from ..LLM.Agent import Agent
+
+logger = logging.getLogger(__name__)
 
 
 class QueryService:
@@ -79,7 +81,7 @@ class QueryService:
         Returns:
             Ответ на вопрос пользователя
         """
-        logging.info(f"Обработка запроса для диалога {dialog_id}")
+        logger.info(f"Обработка запроса для диалога {dialog_id}")
         
         return await self.agent.run(question, dialog_id, dialog_messages)
     
@@ -101,7 +103,7 @@ class QueryService:
         Returns:
             Перефразированный вопрос
         """
-        logging.info("Перефразирование вопроса на основе истории диалога...")
+        logger.info("Перефразирование вопроса на основе истории диалога...")
         
         # Формируем строку диалога из истории
         dialogue_messages = [
@@ -139,7 +141,7 @@ class QueryService:
             - dialog_id: идентификатор диалога
             - dense_vector: векторное представление (добавляется позже)
         """
-        logging.info("Извлечение аспектов из вопроса...")
+        logger.info("Извлечение аспектов из вопроса...")
         
         # Извлекаем аспекты через LLM
         aspects_text = await self.qdrant.extract_aspects_from_question(question)
@@ -161,7 +163,7 @@ class QueryService:
         Args:
             aspects: Список аспектов для векторизации (изменяется in-place)
         """
-        logging.info("Векторизация аспектов...")
+        logger.info("Векторизация аспектов...")
         
         for aspect in aspects:
             aspect["dense_vector"] = await asyncio.to_thread(
@@ -186,7 +188,7 @@ class QueryService:
             Список списков, где каждый внутренний список содержит
             тексты релевантных чанков для соответствующего аспекта
         """
-        logging.info("Поиск релевантных чанков в Qdrant...")
+        logger.info("Поиск релевантных чанков в Qdrant...")
         
         # Векторизуем аспекты перед поиском
         await self._vectorize_aspects(aspects)
@@ -219,7 +221,7 @@ class QueryService:
         Returns:
             Объединенный графовый контекст в виде текста
         """
-        logging.info("Построение графового контекста в Neo4j...")
+        logger.info("Построение графового контекста в Neo4j...")
         
         context = ""
         for chunks in relevant_chunks:
@@ -254,7 +256,7 @@ class QueryService:
         Returns:
             Сгенерированный ответ
         """
-        logging.info("Генерация ответа через LLM...")
+        logger.info("Генерация ответа через LLM...")
         
         answer = await self.llm.answer_with_graph(question, context)
         

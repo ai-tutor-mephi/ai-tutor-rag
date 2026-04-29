@@ -13,10 +13,12 @@ import uuid
 import logging
 from typing import List, Dict
 
-from Handling.Chunker import Chunker
-from Handling.Embedder import Embedder
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
+from ..Handling.Chunker import Chunker
+from ..Handling.Embedder import Embedder
+from ..Databases.QInteracter import QInteracter
+from ..Databases.NeoInteracter import NeoInteracter
+
+logger = logging.getLogger(__name__)
 
 
 class LoadService:
@@ -70,23 +72,23 @@ class LoadService:
             text: Текст файла для обработки
             dialog_id: Идентификатор диалога, к которому относится файл
         """
-        logging.info(f"Начало обработки файла: {file_name} (file_id: {file_id})")
+        logger.info(f"Начало обработки файла: {file_name} (file_id: {file_id})")
         
         # Шаг 1: Разбиение текста на чанки
         chunks = await self._create_chunks(text, file_id, file_name, dialog_id)
-        logging.info(f"Создано {len(chunks)} чанков для файла {file_name}")
+        logger.info(f"Создано {len(chunks)} чанков для файла {file_name}")
         
         # Шаг 2: Векторизация чанков
         await self._vectorize_chunks(chunks)
-        logging.info(f"Чанки векторизованы для файла {file_name}")
+        logger.info(f"Чанки векторизованы для файла {file_name}")
         
         # Шаг 3: Загрузка в Qdrant
         await self._load_to_qdrant(chunks)
-        logging.info(f"Чанки загружены в Qdrant для файла {file_name}")
+        logger.info(f"Чанки загружены в Qdrant для файла {file_name}")
         
         # Шаг 4: Загрузка в Neo4j
         await self._load_to_neo4j(chunks)
-        logging.info(f"Граф создан в Neo4j для файла {file_name}")
+        logger.info(f"Граф создан в Neo4j для файла {file_name}")
     
     async def _create_chunks(
         self,
@@ -107,7 +109,7 @@ class LoadService:
         Returns:
             Список словарей с чанками и их метаданными
         """
-        logging.info(f"Разбиение текста на чанки для файла {file_name}...")
+        logger.info(f"Разбиение текста на чанки для файла {file_name}...")
         
         # Разбиваем текст на чанки
         chunks_text = await asyncio.to_thread(
@@ -135,7 +137,7 @@ class LoadService:
         Args:
             chunks: Список чанков для векторизации (изменяется in-place)
         """
-        logging.info("Векторизация чанков...")
+        logger.info("Векторизация чанков...")
         
         for chunk in chunks:
             # Векторизуем текст чанка
@@ -151,7 +153,7 @@ class LoadService:
         Args:
             chunks: Список векторизованных чанков для загрузки
         """
-        logging.info("Загрузка чанков в Qdrant...")
+        logger.info("Загрузка чанков в Qdrant...")
         await self.qdrant.load_in_qdrant(chunks)
     
     async def _load_to_neo4j(self, chunks: List[Dict]) -> None:
@@ -161,7 +163,7 @@ class LoadService:
         Args:
             chunks: Список чанков для создания графа
         """
-        logging.info("Создание графа в Neo4j...")
+        logger.info("Создание графа в Neo4j...")
         await self.neo.create_graph(chunks)
     
     async def process_files(
@@ -179,7 +181,7 @@ class LoadService:
                 - text: текст файла
             dialog_id: Идентификатор диалога
         """
-        logging.info(f"Начало обработки {len(content)} файлов для диалога {dialog_id}")
+        logger.info(f"Начало обработки {len(content)} файлов для диалога {dialog_id}")
         
         for file_data in content:
             file_id = file_data['fileId']
@@ -193,4 +195,4 @@ class LoadService:
                 dialog_id=dialog_id
             )
         
-        logging.info(f"Все файлы обработаны для диалога {dialog_id}")
+        logger.info(f"Все файлы обработаны для диалога {dialog_id}")

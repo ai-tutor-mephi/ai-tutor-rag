@@ -12,11 +12,11 @@ import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.load_service import LoadService
-from Handling.Chunker import Chunker
-from Handling.Embedder import Embedder
-from Databases.QInteracter import QInteracter
-from Databases.NeoInteracter import NeoInteracter
+from src.services.load_service import LoadService
+from src.Handling.Chunker import Chunker
+from src.Handling.Embedder import Embedder
+from src.Databases.QInteracter import QInteracter
+from src.Databases.NeoInteracter import NeoInteracter
 
 
 @pytest.fixture

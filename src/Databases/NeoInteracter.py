@@ -9,17 +9,13 @@ import json
 from typing import Optional
 
 from .FindsForNeo import FIND_CONTEXT, FIND_NODES, FIND_COMMUNITIES
-from LLM.Prompts import ENTITY_SYS
+from ..LLM.Prompts import ENTITY_SYS
 
 import asyncio
-import sys
 
 import logging
-from utils.MyLogs import setup_logger
 
-# Настройка логов
-setup_logger(__file__)
-
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -67,9 +63,9 @@ class NeoInteracter:
 
         try:
             # Extract entities and relationships
-            logging.info("Извлечение сущностей и связей...")
+            logger.info("Извлечение сущностей и связей...")
             result = await self.ms_graph.extract_nodes_and_rels(data, [])
-            logging.info(f"Сущности и связи извлечены {result}")
+            logger.info(f"Сущности и связи извлечены {result}")
             print(result)
 
             dialog_id = chunks[0].get("dialog_id")
@@ -93,19 +89,19 @@ class NeoInteracter:
                 )
                 
             # Generate summaries for nodes and relationships
-            logging.info("Генерация резюме для сущностей и связей...")
+            logger.info("Генерация резюме для сущностей и связей...")
             result = await self.ms_graph.summarize_nodes_and_rels()
             print(result)
 
             # Identify and summarize communities
-            logging.info("Выделение и суммаризация комьюнити...")
+            logger.info("Выделение и суммаризация комьюнити...")
             result = await self.ms_graph.summarize_communities()
             print(result)
 
 
         except Exception as e:
             import traceback
-            logging.error(f"Ошибка при создании графа в neo4j\n{e}")
+            logger.error(f"Ошибка при создании графа в neo4j\n{e}")
             traceback.print_exc()
 
     @staticmethod
@@ -127,14 +123,14 @@ class NeoInteracter:
         if isinstance(chunks, str):
             chunks = [chunks]
 
-        logging.info("Вызов модели для извлечения сущностей...")
+        logger.info("Вызов модели для извлечения сущностей...")
         ent_resp = await ms.achat(
             messages=[{"role": "system", "content": ENTITY_SYS},
                     {"role": "user", "content": " ".join(chunks)}],
             model=light_model
         )
         ent_resp = ent_resp.content
-        logging.info(f"Ответ модели для извлечения сущностей: {ent_resp}")
+        logger.info(f"Ответ модели для извлечения сущностей: {ent_resp}")
 
         try:
             parsed = json.loads(ent_resp)
@@ -147,7 +143,7 @@ class NeoInteracter:
             return await asyncio.to_thread(NeoInteracter.dedup_keep_order, names)
         except Exception:
             # попробуем из текста хоть что-то искать
-            logging.error("Ошибка при разборе ответа модели для извлечения сущностей")
+            logger.error("Ошибка при разборе ответа модели для извлечения сущностей")
             return await asyncio.to_thread(NeoInteracter.dedup_keep_order, chunks)
 
             
@@ -307,7 +303,7 @@ class NeoInteracter:
         if not names:
             return {"centers": [], "edges": [], "communities": [], "context_text": ""}
         
-        logging.info(f"Выделены имена для поиска в графе: {names}")
+        logger.info(f"Выделены имена для поиска в графе: {names}")
 
         # 3.2 подключаемся к нужной БД
 
@@ -321,13 +317,13 @@ class NeoInteracter:
                 k_hops=k_hops,
                 database=self.database
             )
-            logging.info(f"Данные из графа получены: {result.get('context_text','')[:500]}...")
+            logger.info(f"Данные из графа получены: {result.get('context_text','')[:500]}...")
 
             # подрежем текст если очень длинный
             if len(result.get("context_text","")) > context_lines_limit:
                 result["context_text"] = result["context_text"][:context_lines_limit]
             
-            logging.info(f"Сформирован контекст из графа: {result.get('context_text','')[:500]}...")
+            logger.info(f"Сформирован контекст из графа: {result.get('context_text','')[:500]}...")
             return result
         except Exception as e:
             return None # подумать над выводом из классов

@@ -15,11 +15,11 @@ from langgraph.graph import add_messages
 from typing_extensions import Annotated, TypedDict
 
 from .Helpers import _log_node_snapshot, _preview_text
-from utils.MyLogs import setup_logger
+import logging
 
 load_dotenv()
 
-logger = setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class AgentState(TypedDict):

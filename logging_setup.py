@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -8,35 +7,27 @@ import threading
 from pathlib import Path
 
 _lock = threading.RLock()
-_configured = False
+_done = False
 
 
 def _repo_root() -> Path:
-    """Каталог репозитория (есть requirements.txt или rag.py)."""
-    here = Path(__file__).resolve()
+    here = Path(__file__).resolve().parent
     for d in (here, *here.parents):
         if (d / "requirements.txt").is_file() or (d / "rag.py").is_file():
             return d
-    return here.parents[2]
+    return here
 
 
 def configure_logging() -> None:
-    """
-    Идемпотентно настраивает root: один StreamHandler (stderr) и один FileHandler.
-
-    Уровень: LOG_LEVEL (по умолчанию INFO). Каталог файлов: LOG_DIR или <repo>/Logs.
-    """
-    global _configured
+    global _done
     with _lock:
-        if _configured:
+        if _done:
             return
-        _configured = True
+        _done = True
 
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
     fmt = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
-    formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
+    formatter = logging.Formatter(fmt=fmt, datefmt="%Y-%m-%d %H:%M:%S")
 
     root = logging.getLogger()
     root.setLevel(level)
@@ -55,13 +46,12 @@ def configure_logging() -> None:
         fh.setFormatter(formatter)
         root.addHandler(fh)
     except OSError as e:
-        sys.stderr.write(f"[MyLogs] не удалось подключить файловый лог {log_dir}: {e}\n")
+        sys.stderr.write(f"[logging_setup] не удалось создать файловый лог {log_dir}: {e}\n")
 
-    http_level_name = os.getenv("LOG_LEVEL_HTTP", "WARNING").upper()
-    http_level = getattr(logging, http_level_name, logging.WARNING)
     for name in ("httpx", "httpcore", "urllib3"):
-        logging.getLogger(name).setLevel(http_level)
-
+        logging.getLogger(name).setLevel(
+            getattr(logging, os.getenv("LOG_LEVEL_HTTP", "WARNING").upper(), logging.WARNING)
+        )
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.setLevel(logging.INFO)

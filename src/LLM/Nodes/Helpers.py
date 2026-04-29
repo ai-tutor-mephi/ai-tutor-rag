@@ -9,9 +9,9 @@ from typing import Any, Dict, List
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.prebuilt import ToolNode
 
-from utils.MyLogs import setup_logger
+import logging
 
-logger = setup_logger(__file__)
+logger = logging.getLogger(__name__)
 
 _AGENT_LOG_TAIL = 12
 
