@@ -1,6 +1,7 @@
 import_nodes_query = """
 CREATE (c:__Chunk__ {id: $chunk_id})
-SET c.text = $text
+SET c.text = $text,
+    c.dialog_id = $dialog_id
 WITH c
 UNWIND $data AS row
 MERGE (n:__Entity__ {name: row.entity_name})

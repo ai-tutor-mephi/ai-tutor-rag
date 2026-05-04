@@ -50,35 +50,13 @@ services:
       timeout: 5s
       retries: 30
 
-  guardrails-server:
-    build:
-      context: .
-      dockerfile: Dockerfile_Guardrails
-      args:
-        GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
-    container_name: guardrails-server
-    # restart: unless-stopped
-    networks:
-      - ai_tutor_network
-    volumes:
-      # тот же кэш, что у app: меньше повторных скачиваний HF и больше места, чем только слой образа
-      - ./hf_cache:/root/.cache/huggingface
-    # Не переопределять CMD: в Dockerfile_Guardrails уже gunicorn --bind 0.0.0.0:8001 + guardrails_config.
-    # `guardrails start` по умолчанию часто слушает только 127.0.0.1 → с rag/хоста Connection refused / reset.
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
-      GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
-      GUARDRAILS_GUARD_NAME: detect_jailbreak_guard
-    ports:
-      - "8001:8001"
+  # Guardrails: код сохранён (guardrails_config.py, Dockerfile_Guardrails), сервис из сборки убран.
+  # Включить снова: добавить сервис из Dockerfile_Guardrails и задать app переменные GUARDRAILS_SERVER_URL / токены.
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        GUARDRAILS_TOKEN: ${GUARDRAILS_TOKEN}
     container_name: rag
     # restart: unless-stopped
     depends_on:
@@ -97,10 +75,6 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MS_GRAPHRAG_MODEL: ${MS_GRAPHRAG_MODEL}
       MS_LIGHT_MODEL: ${MS_LIGHT_MODEL}
-      GUARDRAILS_SERVER_URL: http://guardrails-server:8001
-      GUARDRAILS_SERVER_TOKEN: ${GUARDRAILS_TOKEN}
-      # первый запрос к DetectJailbreak после старта контейнера может идти минуты на CPU
-      GUARDRAILS_VALIDATE_TIMEOUT: ${GUARDRAILS_VALIDATE_TIMEOUT:-120}
     volumes:
       - ./hf_cache:/root/.cache/huggingface
       - ./Logs:/Logs

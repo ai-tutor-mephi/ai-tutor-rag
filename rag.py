@@ -21,6 +21,7 @@ from logging_setup import configure_logging
 configure_logging()
 
 import fastapi
+from fastapi import Path
 from fastapi.responses import JSONResponse
 
 from src.utils.ragPydantic import LoadRequest, QueryRequest, TestsRequest
@@ -69,15 +70,21 @@ query_service = QueryService(
 )
 
 
-@rag.post("/tests")
-async def create_tests(data: TestsRequest) -> JSONResponse:
+@rag.post("/tests/{questions_count}")
+async def create_tests(
+    data: TestsRequest,
+    questions_count: int = Path(..., description="Число вопросов в тесте"),
+) -> JSONResponse:
     """
     Эндпоинт для создания тестов для диалога.
-    
-    Принимает идентификатор диалога и историю диалога и создает тесты для диалога.
+
+    Принимает количество вопросов в пути, идентификатор диалога и историю в теле.
     """
     try:
-        logger.info("Получен запрос на создание тестов для диалога")
+        logger.info(
+            "Получен запрос на создание тестов для диалога (questions_count=%s)",
+            questions_count,
+        )
         data_dict = data.model_dump()
         dialog_id = data_dict['dialogId']
         dialog_messages = data_dict['dialogMessages']
@@ -89,7 +96,9 @@ async def create_tests(data: TestsRequest) -> JSONResponse:
         )
     
     try:
-        tests = await generate_tests(dialog_messages, neo, dialog_id)
+        tests = await generate_tests(
+            dialog_messages, neo, dialog_id, questions_count=questions_count
+        )
     except Exception as e:
         logger.error("Ошибка при создании тестов для диалога: %s", e)
         return JSONResponse(

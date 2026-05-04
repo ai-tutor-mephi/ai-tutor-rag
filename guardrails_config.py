@@ -1,5 +1,8 @@
 """
 Конфиг для Guardrails Server (guardrails start).
+
+В текущем docker-compose сервис Guardrails не собирается и не поднимается;
+приложение при отсутствии GUARDRAILS_SERVER_URL не вызывает проверку входа.
 """
 
 from guardrails import Guard

@@ -16,7 +16,8 @@ from pydantic import BaseModel, ValidationError, field_validator, model_validato
 
 from ..Databases.NeoInteracter import NeoInteracter
 from ..LLM.Nodes.Helpers import _dialog_dicts_to_lc_messages
-from ..LLM.Prompts import TESTS_GENERATION_SYS
+from ..LLM.Prompts import build_tests_generation_system_prompt
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,19 +46,21 @@ class TestsResponse(BaseModel):
 
 
 def get_random_entities(graph_db: NeoInteracter, dialog_id: str, n: int = 10) -> List[Dict[str, Any]]:
-    """Случайные узлы графа с данным dialog_id (имя / подписи для подсказки модели)."""
+    """Случайные термины для подсказки модели (имя + типы узла), без технических id."""
     q = """
     MATCH (n)
     WHERE n.dialog_id = $dialog_id
-    RETURN elementId(n) AS id,
-           labels(n) AS labels,
-           coalesce(n.name, n.title, n.text, "") AS name
+    WITH labels(n) AS labels,
+         coalesce(n.name, n.title, n.text, "") AS name
+    WHERE name <> ""
+    RETURN DISTINCT name, labels
     ORDER BY rand()
     LIMIT $n
     """
     db = graph_db.database
     with graph_db.driver.session(database=db) as session:
-        return [dict(r) for r in session.run(q, {"dialog_id": dialog_id, "n": n})]
+        rows = [dict(r) for r in session.run(q, {"dialog_id": dialog_id, "n": n})]
+    return [{"name": r["name"], "labels": r.get("labels") or []} for r in rows]
 
 
 def _dialogue_text_from_lc_messages(messages: list) -> str:
@@ -88,47 +91,11 @@ def _extract_json_object(text: str) -> str:
     return t[start : end + 1]
 
 
-async def generate_tests(
-    dialog_messages: List[Dict[str, Any]],
-    neo: NeoInteracter,
-    dialog_id: str,
+async def _generate_tests_payload(
+    chat: ChatOpenAI,
+    sys_msg: SystemMessage,
+    human_msg: HumanMessage,
 ) -> Dict[str, Any]:
-    """
-    Строит тест по истории диалога (и случайным сущностям графа). Возвращает dict для JSON-ответа API.
-    """
-    lc_messages = _dialog_dicts_to_lc_messages(dialog_messages)
-    dialogue = _dialogue_text_from_lc_messages(lc_messages)
-
-    try:
-        entities = get_random_entities(neo, dialog_id, n=10)
-        logger.info(f"Случайные сущности графа: {entities}")
-    except Exception:
-        logger.exception("get_random_entities failed dialog_id=%s", dialog_id)
-        entities = []
-
-    entities_str = json.dumps(entities, ensure_ascii=False)
-
-    if not dialogue.strip():
-        dialogue = (
-            "(Реплик в истории нет. Сгенерируй вопросы по сущностям из графа, без выдумывания фактов вне них.)"
-        )
-
-    chat = ChatOpenAI(
-        model=os.getenv("MS_GRAPHRAG_MODEL", "gpt-4o"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"),
-        temperature=0.3,
-    )
-
-    sys_msg = SystemMessage(content=TESTS_GENERATION_SYS)
-    human_msg = HumanMessage(
-        content=(
-            "Ниже транскрипт диалога. Сгенерируй тест строго в одном JSON-объекте по схеме из системного сообщения.\n\n"
-            f"{dialogue}\n\n"
-            f"Подсказка — случайные узлы графа для этого dialog_id: {entities_str}"
-        )
-    )
-
     structured = chat.with_structured_output(TestsResponse)
     try:
         out = await structured.ainvoke([sys_msg, human_msg])
@@ -148,3 +115,85 @@ async def generate_tests(
     except (ValidationError, ValueError, json.JSONDecodeError):
         logger.exception("tests generation: failed to parse model output")
         raise
+
+
+async def generate_tests(
+    dialog_messages: List[Dict[str, Any]],
+    neo: NeoInteracter,
+    dialog_id: str,
+    *,
+    questions_count: int,
+) -> Dict[str, Any]:
+    """
+    Строит тест по истории диалога и случайным терминам из материала (Neo4j).
+    Ровно questions_count вопросов; при несовпадении длины — один повтор запроса к LLM.
+    """
+    lc_messages = _dialog_dicts_to_lc_messages(dialog_messages)
+    dialogue = _dialogue_text_from_lc_messages(lc_messages)
+
+    try:
+        entities = get_random_entities(neo, dialog_id, n=10)
+        logger.info("Подсказки-термины для теста: %s", entities)
+    except Exception:
+        logger.exception("get_random_entities failed dialog_id=%s", dialog_id)
+        entities = []
+
+    entities_str = json.dumps(entities, ensure_ascii=False)
+
+    empty_dialogue_placeholder = (
+        "(Реплик чата по теме нет. Сгенерируй ровно "
+        f"{questions_count} вопросов по смыслу учебных терминов ниже — проверка знаний по предмету, "
+        "без вопросов про отсутствие диалога, списки или настройки.)"
+    )
+    if not dialogue.strip():
+        dialogue_body = empty_dialogue_placeholder
+    else:
+        dialogue_body = dialogue
+
+    chat = ChatOpenAI(
+        model=os.getenv("MS_GRAPHRAG_MODEL", "gpt-4o"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"),
+        temperature=0.3,
+    )
+
+    sys_content = build_tests_generation_system_prompt(questions_count)
+    sys_msg = SystemMessage(content=sys_content)
+    human_msg = HumanMessage(
+        content=(
+            f"Сгенерируй тест для обучения: ровно {questions_count} вопросов "
+            "по содержанию темы (что должен знать ученик). "
+            "Формат — один JSON-объект по схеме из системного сообщения.\n\n"
+            f"Реплики учебного чата (из них извлекай факты о предмете, не придумывай вопросы про сам чат или формулировки запросов):\n"
+            f"{dialogue_body}\n\n"
+            f"Опорные термины из загруженного материала (используй для фактов по теме, не спрашивай про «список терминов», пустой он или нет): "
+            f"{entities_str}"
+        )
+    )
+
+    result = await _generate_tests_payload(chat, sys_msg, human_msg)
+    if len(result.get("questions", [])) == questions_count:
+        return result
+
+    got = len(result.get("questions", []))
+    logger.warning(
+        "tests: expected %s questions, got %s — retrying once",
+        questions_count,
+        got,
+    )
+    fix_human = HumanMessage(
+        content=(
+            f"Предыдущий ответ содержал {got} вопросов, а нужно ровно {questions_count}. "
+            "Верни заново полный один JSON-объект по схеме, с массивом \"questions\" "
+            f"из ровно {questions_count} элементов. Без markdown. "
+            "Вопросы — только по предмету для ученика, без мета-вопросов про чат или конфигурацию.\n\n"
+            f"Реплики учебного чата:\n{dialogue_body}\n\n"
+            f"Опорные термины: {entities_str}"
+        )
+    )
+    result2 = await _generate_tests_payload(chat, sys_msg, fix_human)
+    if len(result2.get("questions", [])) != questions_count:
+        raise ValueError(
+            f"Модель вернула {len(result2.get('questions', []))} вопросов вместо {questions_count}"
+        )
+    return result2

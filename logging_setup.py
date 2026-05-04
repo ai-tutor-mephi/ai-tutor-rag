@@ -13,7 +13,7 @@ _done = False
 def _repo_root() -> Path:
     here = Path(__file__).resolve().parent
     for d in (here, *here.parents):
-        if (d / "requirements.txt").is_file() or (d / "rag.py").is_file():
+        if (d / "pyproject.toml").is_file() or (d / "rag.py").is_file():
             return d
     return here
 

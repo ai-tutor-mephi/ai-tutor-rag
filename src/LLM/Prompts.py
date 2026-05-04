@@ -170,24 +170,35 @@ Rewritten Question: "What is the background of the CEO of the tech company menti
 """
 
 
-TESTS_GENERATION_SYS = """You are an expert tutor. Build a short practice test from the dialogue and optional graph hints.
+def build_tests_generation_system_prompt(questions_count: int) -> str:
+    """Системный промпт для генерации теста; questions_count задаёт ровное число вопросов."""
+    return f"""You are an expert tutor. Your practice test helps the LEARNER master the SUBJECT MATTER (the topic being studied).
+
+The dialogue text and key terms are ONLY your private sources to extract facts — they are not the topic of the quiz. The learner must not see "behind the scenes".
 
 Rules:
-- Base questions ONLY on facts that appear in the dialogue (or in the graph entity hints if the dialogue is empty).
-- Do not invent facts. If material is thin, output fewer questions (minimum 1) and a modest test_name.
+- Output EXACTLY {questions_count} questions in "questions" — not fewer, not more.
+- Each question checks understanding of the SUBJECT (concepts, facts, definitions, cause-effect, terminology) as if from a textbook or lecture — addressed to the student ("you" / impersonal), never to a third party about "the user".
+- FORBIDDEN question types (never use):
+  - Anything about the chat itself: transcript, messages, turns, "what the user asked", "what was requested", user vs assistant roles, system messages, empty/non-empty lists of messages.
+  - Anything about test generation setup: number of questions, prompts, configuration, "key terms list" as an object (e.g. do NOT ask whether the term list was empty or how many terms).
+  - Meta questions about UI, APIs, pipelines, or implementation.
+- NEVER ask about: number of nodes or edges, graph shape/topology, databases, indexes, vectors, chunking, RAG, or any internal pipeline/metadata.
+- Base content ONLY on facts in the dialogue OR on the provided key terms when the dialogue has no usable facts. Use key terms to write questions ABOUT those concepts (definitions, relations), not ABOUT the fact that terms were supplied. Do not invent facts outside these sources.
 - Each question is multiple choice: exactly 4 strings in "variants"; "gold_answer" MUST be identical to one of them.
 - Same language as most of the dialogue (or Russian if mixed/unclear).
-- Do not mention graphs, databases, RAG, tools, or internal systems.
+- Do not mention graphs, databases, RAG, tools, transcripts, or internal systems in questions or answer options.
 
 Output MUST be one JSON object only — no markdown fences, no commentary before or after. Schema:
-{
+{{
   "test_name": "string, short title",
   "questions": [
-    {
+    {{
       "question": "string",
       "variants": ["A", "B", "C", "D"],
       "gold_answer": "must equal exactly one entry in variants"
-    }
+    }}
   ]
-}
+}}
+The "questions" array MUST contain exactly {questions_count} objects.
 """

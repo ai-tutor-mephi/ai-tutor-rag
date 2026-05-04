@@ -59,7 +59,14 @@ class NeoInteracter:
         :return:
         """
 
-        data = [d.get("text") for d in chunks]
+        data = [
+            {
+                "text": d.get("text"),
+                "chunk_id": d.get("chunk_id"),
+                "dialog_id": d.get("dialog_id"),
+            }
+            for d in chunks
+        ]
 
         try:
             # Extract entities and relationships

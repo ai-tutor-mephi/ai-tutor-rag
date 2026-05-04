@@ -12,10 +12,10 @@ _configured = False
 
 
 def _repo_root() -> Path:
-    """Каталог репозитория (есть requirements.txt или rag.py)."""
+    """Каталог репозитория (есть pyproject.toml или rag.py)."""
     here = Path(__file__).resolve()
     for d in (here, *here.parents):
-        if (d / "requirements.txt").is_file() or (d / "rag.py").is_file():
+        if (d / "pyproject.toml").is_file() or (d / "rag.py").is_file():
             return d
     return here.parents[2]
 

@@ -2,8 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# build arg для токена Guardrails Hub
-ARG GUARDRAILS_TOKEN
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
 
 # базовые зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -11,15 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# обновляем pip
-RUN pip install --no-cache-dir --upgrade pip
+COPY pyproject.toml uv.lock ./
+COPY ms_graphrag_neo4j ./ms_graphrag_neo4j
 
-# PyTorch CPU
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+RUN uv sync --frozen --no-install-project
 
-# зависимости проекта
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PATH="/app/.venv/bin:$PATH"
 
 # HuggingFace cache
 ENV HF_HOME=/root/.cache/huggingface
@@ -31,10 +31,6 @@ from transformers import AutoTokenizer, AutoModel; \
 model_id='BAAI/bge-m3'; \
 AutoTokenizer.from_pretrained(model_id); \
 AutoModel.from_pretrained(model_id)"
-
-# локальный модуль
-COPY ms_graphrag_neo4j ./ms_graphrag_neo4j
-RUN pip install -e ./ms_graphrag_neo4j
 
 # остальной код
 COPY . .

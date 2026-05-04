@@ -114,25 +114,45 @@ class MsGraphRAG:
             )
 
     async def extract_nodes_and_rels(
-        self, input_texts: list, allowed_entities: list
+        self, input_chunks: list, allowed_entities: list
     ) -> str:
         """
-        Extract nodes and relationships from input texts using LLM and store them in Neo4j.
+        Extract nodes and relationships from input chunks using LLM and store them in Neo4j.
 
         Args:
-            input_texts (list): List of text documents to process and extract entities from
-            allowed_entities (list): List of entity types to extract from the texts
+            input_chunks: Each item is either a plain string (chunk text) or a dict with:
+                text — required for dict; chunk_id — optional stable id (per upload/dialog);
+                dialog_id — optional, stored on the __Chunk__ node.
+            allowed_entities: List of entity types to extract from the texts
 
         Returns:
             str: Success message with count of extracted relationships
 
         Notes:
-            - Uses parallel processing with tqdm progress tracking
-            - Extracted entities and relationships are stored directly in Neo4j
-            - Each text document is processed independently by the LLM
+            - Results are gathered in the same order as input_chunks (parallelism preserves order).
+            - Plain strings use hash(text) as chunk id (legacy); prefer passing chunk_id for uniqueness across dialogs.
         """
 
-        async def process_text(input_text):
+        def _get_text(item: Any) -> str:
+            if isinstance(item, dict):
+                return (item.get("text") or "").strip() if item.get("text") is not None else ""
+            if isinstance(item, str):
+                return item
+            return str(item)
+
+        def _get_chunk_id(item: Any, text: str) -> str:
+            if isinstance(item, dict) and item.get("chunk_id"):
+                return str(item["chunk_id"])
+            return get_hash(text)
+
+        def _get_dialog_id(item: Any):
+            if isinstance(item, dict):
+                return item.get("dialog_id")
+            return None
+
+        texts = [_get_text(x) for x in input_chunks]
+
+        async def process_text(input_text: str):
             prompt = GRAPH_EXTRACTION_PROMPT.format(
                 entity_types=allowed_entities,
                 input_text=input_text,
@@ -143,48 +163,35 @@ class MsGraphRAG:
             messages = [
                 {"role": "user", "content": prompt},
             ]
-            # Make the LLM call
             output = await self.achat(messages, model=self.model)
-            # Construct JSON from output
             return parse_extraction_output(output.content)
 
-        # Create tasks for all input texts
-        tasks = [process_text(text) for text in input_texts]
-
-        # Process tasks with tqdm progress bar
-        # Use semaphore to limit concurrent tasks if max_workers is specified
         if self.max_workers:
             semaphore = asyncio.Semaphore(self.max_workers)
 
-            async def process_with_semaphore(task):
+            async def limited_process(t: str):
                 async with semaphore:
-                    return await task
+                    return await process_text(t)
 
-            results = []
-            for task in tqdm.as_completed(
-                [process_with_semaphore(task) for task in tasks],
-                total=len(tasks),
-                desc="Extracting nodes & relationships",
-            ):
-                results.append(await task)
+            results = await asyncio.gather(*[limited_process(t) for t in texts])
         else:
-            results = []
-            for task in tqdm.as_completed(
-                tasks, total=len(tasks), desc="Extracting nodes & relationships"
-            ):
-                results.append(await task)
+            results = await asyncio.gather(*[process_text(t) for t in texts])
 
         total_relationships = 0
-        # Import nodes and relationships
-        for text, output in zip(input_texts, results):
+        for item, text, output in zip(input_chunks, texts, results):
             nodes, relationships = output
             total_relationships += len(relationships)
-            # Import nodes
+            chunk_id = _get_chunk_id(item, text)
+            dialog_id = _get_dialog_id(item)
             self.query(
                 import_nodes_query,
-                params={"text": text, "chunk_id": get_hash(text), "data": nodes},
+                params={
+                    "text": text,
+                    "chunk_id": chunk_id,
+                    "dialog_id": dialog_id,
+                    "data": nodes,
+                },
             )
-            # Import relationships
             self.query(import_relationships_query, params={"data": relationships})
 
         return f"Successfuly extracted and imported {total_relationships} relationships"

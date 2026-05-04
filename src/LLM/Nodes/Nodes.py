@@ -55,7 +55,7 @@ def reject_input_node(state: AgentState) -> AgentState:
 
 
 def input_guard_node(state: AgentState) -> dict:
-    """Проверяет входное сообщение пользователя и сохраняет результат в state."""
+    """Входная модерация через Guardrails HTTP API при заданном GUARDRAILS_SERVER_URL; без URL — всегда разрешает."""
     _log_node_snapshot("input_guard", state)
     messages = state["messages"]
     last_message = messages[-1]

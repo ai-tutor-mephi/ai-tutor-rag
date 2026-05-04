@@ -5,6 +5,7 @@ neo4j_plugins
 qdrant_data
 hf_cache
 venv
+.venv
 __pycache__
 *.pyc
 *.pyo
