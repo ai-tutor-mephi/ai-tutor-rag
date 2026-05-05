@@ -64,6 +64,8 @@ services:
       - neo4j
     networks:
       - ai_tutor_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       QDRANT_URL: http://qdrant:6333
       QDRANT_KEY: ${QDRANT_KEY} 
@@ -75,6 +77,13 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MS_GRAPHRAG_MODEL: ${MS_GRAPHRAG_MODEL}
       MS_LIGHT_MODEL: ${MS_LIGHT_MODEL}
+
+      HTTP_PROXY: http://host.docker.internal:12334
+      HTTPS_PROXY: http://host.docker.internal:12334
+      http_proxy: http://host.docker.internal:12334
+      https_proxy: http://host.docker.internal:12334
+      NO_PROXY: localhost,127.0.0.1,backend,qdrant,neo4j,postgres,minio,ai-tutor-db
+      no_proxy: localhost,127.0.0.1,backend,qdrant,neo4j,postgres,minio,ai-tutor-db
     volumes:
       - ./hf_cache:/root/.cache/huggingface
       - ./Logs:/Logs
