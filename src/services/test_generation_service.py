@@ -10,6 +10,7 @@ import os
 import re
 from typing import Any, Dict, List
 
+import json_repair
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
@@ -91,28 +92,47 @@ def _extract_json_object(text: str) -> str:
     return t[start : end + 1]
 
 
+def _parse_tests_json_payload(payload: str) -> Dict[str, Any]:
+    """Строгий JSON, затем json-repair (невалидные \\ в строках от LLM)."""
+    try:
+        return TestsResponse.model_validate_json(payload).model_dump()
+    except (ValidationError, ValueError, json.JSONDecodeError) as e:
+        try:
+            data = json_repair.loads(payload)
+            return TestsResponse.model_validate(data).model_dump()
+        except Exception as repair_e:
+            logger.warning(
+                "tests JSON: strict parse failed (%s), repair failed (%s)",
+                e,
+                repair_e,
+            )
+            raise e from repair_e
+
+
 async def _generate_tests_payload(
     chat: ChatOpenAI,
     sys_msg: SystemMessage,
     human_msg: HumanMessage,
 ) -> Dict[str, Any]:
-    structured = chat.with_structured_output(TestsResponse)
-    try:
-        out = await structured.ainvoke([sys_msg, human_msg])
-        if isinstance(out, TestsResponse):
-            return out.model_dump()
-        return TestsResponse.model_validate(out).model_dump()
-    except Exception as e:
-        logger.warning("structured output failed (%s), falling back to raw JSON parse", e)
+    # Groq и др.: json_schema даёт обрывы — сначала tool-calling; затем схема; потом json_object.
+    for method in ("function_calling", "json_schema"):
+        structured = chat.with_structured_output(TestsResponse, method=method)
+        try:
+            out = await structured.ainvoke([sys_msg, human_msg])
+            if isinstance(out, TestsResponse):
+                return out.model_dump()
+            return TestsResponse.model_validate(out).model_dump()
+        except Exception as e:
+            logger.warning("structured output failed (method=%s): %s", method, e)
 
-    raw = await chat.ainvoke([sys_msg, human_msg])
+    json_chat = chat.bind(response_format={"type": "json_object"})
+    raw = await json_chat.ainvoke([sys_msg, human_msg])
     content = raw.content
     text = content if isinstance(content, str) else str(content)
     try:
         payload = _extract_json_object(text)
-        parsed = TestsResponse.model_validate_json(payload)
-        return parsed.model_dump()
-    except (ValidationError, ValueError, json.JSONDecodeError):
+        return _parse_tests_json_payload(payload)
+    except Exception:
         logger.exception("tests generation: failed to parse model output")
         raise
 
@@ -150,11 +170,13 @@ async def generate_tests(
     else:
         dialogue_body = dialogue
 
+    max_completion = int(os.getenv("TESTS_GEN_MAX_COMPLETION_TOKENS", "8192"))
     chat = ChatOpenAI(
         model=os.getenv("MS_GRAPHRAG_MODEL", "gpt-4o"),
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1"),
         temperature=0.3,
+        max_tokens=max_completion,
     )
 
     sys_content = build_tests_generation_system_prompt(questions_count)

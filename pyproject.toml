@@ -69,6 +69,7 @@ dependencies = [
     "torchvision",
     "torchaudio",
     "ms_graphrag_neo4j",
+    "json-repair>=0.30",
 ]
 
 [tool.uv.sources]

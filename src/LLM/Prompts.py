@@ -188,6 +188,7 @@ Rules:
 - Each question is multiple choice: exactly 4 strings in "variants"; "gold_answer" MUST be identical to one of them.
 - Same language as most of the dialogue (or Russian if mixed/unclear).
 - Do not mention graphs, databases, RAG, tools, transcripts, or internal systems in questions or answer options.
+- JSON string values must be valid JSON: no raw backslashes except standard escapes (\\\\, \\\", \\n, \\uXXXX). Do not put LaTeX like \\frac in text — write math in plain words or Unicode symbols.
 
 Output MUST be one JSON object only — no markdown fences, no commentary before or after. Schema:
 {{
