@@ -13,8 +13,10 @@ from dotenv import load_dotenv
 
 from ms_graphrag_neo4j import MsGraphRAG
 from neo4j import GraphDatabase
+import json
+import re
 from openai import OpenAI
-from .Prompts import CONTEXT_SYS, REWRITE_QUESTION_SYS
+from .Prompts import CONTEXT_SYS, GENERAL_QUESTION_CLASSIFY_SYS, REWRITE_QUESTION_SYS
 
 import logging
 
@@ -41,6 +43,7 @@ class LLM:
     Предоставляет методы для:
     - Генерации ответов на основе графового контекста
     - Перефразирования вопросов с учетом истории диалога
+    - Классификации «общий вопрос по всему документу» vs узкий запрос
     """
     def __init__(self, model=model, driver=driver, ms=ms, client=client, light_model=light_model):
         self.model=model
@@ -115,6 +118,40 @@ class LLM:
 
         logger.info(f"Перефразированный вопрос: {answer}")
         return answer
+
+    async def classify_general_document_question(self, question: str, dialogue: str) -> bool:
+        """
+        Определяет, требует ли вопрос обзора всего загруженного материала (конспект, все теоремы, о чём документ…).
+
+        Returns:
+            True если вопрос «общий» по документу, False если достаточно точечного поиска.
+        """
+        logger.info(
+            "Классификация общий/узкий вопрос (dialogue_len=%s, question_preview=%s)",
+            len(dialogue or ""),
+            (question or "")[:200],
+        )
+        resp = self.client.chat.completions.create(
+            model=self.light_model,
+            messages=[
+                {"role": "system", "content": GENERAL_QUESTION_CLASSIFY_SYS},
+                {
+                    "role": "user",
+                    "content": f"Dialogue:\n{dialogue}\n\nQuestion:\n{question}",
+                },
+            ],
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        logger.info(f"Ответ классификатора: {raw}")
+
+        try:
+            m = re.search(r"\{[^}]*\"general\"\s*:\s*(true|false)[^}]*\}", raw, re.I)
+            blob = m.group(0) if m else raw
+            data = json.loads(blob)
+            return bool(data.get("general"))
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            logger.warning("Не удалось распарсить JSON классификатора, считаем вопрос узким")
+            return False
 
 
 if __name__ == "__main__":

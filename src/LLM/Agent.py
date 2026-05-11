@@ -26,6 +26,7 @@ from .Nodes.Nodes import (
 )
 from .Prompts import AGENT_CONTEXT_SYS
 from ..utils.Tools import tools
+from ..utils.rag_request_context import is_general_document_question_cv
 
 load_dotenv()
 
@@ -91,6 +92,8 @@ class Agent:
         question: str,
         dialog_id: str,
         dialog_messages: List[Dict],
+        *,
+        is_general_document_question: bool = False,
     ) -> str:
         logger.info(
             "Agent.run start dialog_id=%s question_len=%s history_turns=%s",
@@ -113,11 +116,14 @@ The rag_tool requires the dialog_id parameter. Use this dialog ID: {dialog_id}
             "input_is_safe": True,
         }
 
+        token = is_general_document_question_cv.set(is_general_document_question)
         try:
             result = await self.graph.ainvoke(state)
         except Exception:
             logger.exception("Agent.run: graph.ainvoke failed (dialog_id=%s)", dialog_id)
             raise
+        finally:
+            is_general_document_question_cv.reset(token)
 
         messages = result["messages"]
         last_message = messages[-1]
