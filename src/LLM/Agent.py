@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -31,6 +31,77 @@ from ..utils.rag_request_context import is_general_document_question_cv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+def _message_role(msg: BaseMessage) -> str:
+    if isinstance(msg, SystemMessage):
+        return "system"
+    if isinstance(msg, HumanMessage):
+        return "user"
+    if isinstance(msg, AIMessage):
+        return "assistant"
+    return getattr(msg, "type", msg.__class__.__name__)
+
+
+def _log_agent_context(
+    dialog_id: str,
+    system_message: SystemMessage,
+    history_messages: Sequence[BaseMessage],
+    user_message: HumanMessage,
+) -> None:
+    """
+    Пишет в лог то, что реально уходит в граф:
+    - полный system prompt;
+    - краткую сводку по истории;
+    - при включённом LOG_AGENT_CONTEXT=1 — полные тексты сообщений.
+    """
+    try:
+        log_full = os.getenv("LOG_AGENT_CONTEXT", "0") == "1"
+
+        logger.info(
+            "Agent context (dialog_id=%s): system_len=%s history_msgs=%s user_len=%s",
+            dialog_id,
+            len(str(system_message.content)) if system_message.content is not None else 0,
+            len(history_messages),
+            len(str(user_message.content)) if user_message.content is not None else 0,
+        )
+
+        logger.info(
+            "Agent context system (dialog_id=%s): %s",
+            dialog_id,
+            system_message.content,
+        )
+
+        if history_messages:
+            logger.info("Agent context history summary (dialog_id=%s):", dialog_id)
+            for idx, m in enumerate(history_messages):
+                content_str = str(getattr(m, "content", ""))
+                preview = content_str[:200].replace("\n", " ")
+                logger.info(
+                    "  [%s] role=%s len=%s preview=%s",
+                    idx,
+                    _message_role(m),
+                    len(content_str),
+                    preview,
+                )
+
+        if log_full:
+            logger.info("Agent context FULL history (dialog_id=%s):", dialog_id)
+            for idx, m in enumerate(history_messages):
+                logger.info(
+                    "  FULL[%s] role=%s content=%r",
+                    idx,
+                    _message_role(m),
+                    getattr(m, "content", None),
+                )
+
+            logger.info(
+                "Agent context FULL user (dialog_id=%s): %r",
+                dialog_id,
+                user_message.content,
+            )
+    except Exception:
+        logger.exception("Failed to log agent context (dialog_id=%s)", dialog_id)
 
 
 class Agent:
@@ -101,6 +172,9 @@ class Agent:
             len(question) if question is not None else None,
             len(dialog_messages) if dialog_messages else 0,
         )
+        # Дополнительное логирование контекста агента можно включить через LOG_AGENT_CONTEXT=1|true.
+        log_agent_ctx = os.getenv("LOG_AGENT_CONTEXT", "").lower() in ("1", "true", "yes")
+
         system_content = AGENT_CONTEXT_SYS + f"""
 
 The rag_tool requires the dialog_id parameter. Use this dialog ID: {dialog_id}
@@ -115,6 +189,41 @@ The rag_tool requires the dialog_id parameter. Use this dialog ID: {dialog_id}
             "dialog_id": dialog_id,
             "input_is_safe": True,
         }
+
+        _log_agent_context(
+            dialog_id=dialog_id,
+            system_message=system_message,
+            history_messages=history_messages,
+            user_message=user_message,
+        )
+
+        if log_agent_ctx:
+            try:
+                # Не логируем «сырые» dict'ы, только уже собранные сообщения для LangGraph.
+                preview_messages = []
+                for m in state["messages"]:
+                    role = getattr(m, "type", getattr(m, "__class__", type(m)).__name__)
+                    content = getattr(m, "content", "")
+                    # Обрезаем контент, чтобы не засорять лог длинными документами.
+                    if isinstance(content, str) and len(content) > 2000:
+                        content_preview = content[:2000] + "... [truncated]"
+                    else:
+                        content_preview = content
+                    preview_messages.append(
+                        {
+                            "role": role,
+                            "content": content_preview,
+                        }
+                    )
+
+                logger.info(
+                    "Agent.run context (dialog_id=%s) state_dialog_id=%s messages=%s",
+                    dialog_id,
+                    state.get("dialog_id"),
+                    preview_messages,
+                )
+            except Exception:
+                logger.exception("Agent.run: failed to log agent context (dialog_id=%s)", dialog_id)
 
         token = is_general_document_question_cv.set(is_general_document_question)
         try:

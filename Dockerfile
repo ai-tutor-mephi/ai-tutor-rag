@@ -28,7 +28,7 @@ RUN mkdir -p $HF_HOME
 # предзагрузка модели
 RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); \
 from transformers import AutoTokenizer, AutoModel; \
-model_id='BAAI/bge-m3'; \
+model_id='Qwen/Qwen3-Embedding-8B'; \
 AutoTokenizer.from_pretrained(model_id); \
 AutoModel.from_pretrained(model_id)"
 
