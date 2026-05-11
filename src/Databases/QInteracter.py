@@ -70,8 +70,9 @@ class QInteracter:
                 {"role": "user", "content": question}
             ]
         )
-        logger.info(f"Ответ модели для извлечения аспектов: {resp.choices[0].message.content}")
-        return resp.choices[0].message.content.split("||")
+        raw = resp.choices[0].message.content or ""
+        logger.info(f"Ответ модели для извлечения аспектов: {raw}")
+        return [a.strip() for a in raw.split("||") if a.strip()]
     
     async def dense_search(self, query: dict, topk: int = 5) -> list[str]:
         """
@@ -109,6 +110,63 @@ class QInteracter:
         
         logger.info(f"Найдено {len(points)} ближайших чанков. Тексты чанков: {[p.payload.get('text','')[:100]+'...' for p in points]}")
         return [p.payload.get("text", "") for p in points]
+
+    async def scroll_all_chunk_texts(self, dialog_id: str) -> list[str]:
+        """
+        Возвращает тексты всех точек коллекции диалога, отсортированные по файлу и chunk_id.
+
+        Используется для «общих» вопросов: без эмбеддингов и без top-k отбора.
+        """
+        if not self.client.collection_exists(collection_name=dialog_id):
+            logger.info("Коллекция %s не существует — scroll пустой", dialog_id)
+            return []
+
+        rows: list[dict] = []
+        next_offset = None
+        while True:
+            scroll_kwargs: dict = {
+                "collection_name": dialog_id,
+                "limit": 256,
+                "with_payload": qm.PayloadSelectorInclude(
+                    include=["text", "file_name", "chunk_id"]
+                ),
+                "with_vectors": False,
+            }
+            if next_offset is not None:
+                scroll_kwargs["offset"] = next_offset
+
+            points, next_offset = self.client.scroll(**scroll_kwargs)
+
+            for p in points:
+                pl = p.payload or {}
+                chunk_id_val = pl.get("chunk_id")
+                if chunk_id_val is None:
+                    chunk_id_val = str(p.id)
+                text = (pl.get("text") or "").strip()
+                if not text:
+                    continue
+                rows.append(
+                    {
+                        "text": text,
+                        "file_name": pl.get("file_name") or "",
+                        "chunk_id": str(chunk_id_val),
+                    }
+                )
+
+            if next_offset is None:
+                break
+
+        rows.sort(key=lambda r: (r["file_name"], r["chunk_id"]))
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for r in rows:
+            t = r["text"]
+            if t in seen:
+                continue
+            seen.add(t)
+            ordered.append(t)
+        logger.info("scroll_all_chunk_texts: dialog_id=%s chunks=%s", dialog_id, len(ordered))
+        return ordered
     
     async def load_in_qdrant(self, chunks: list[dict]) -> None:
         """

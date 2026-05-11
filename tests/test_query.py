@@ -50,6 +50,7 @@ def mock_neo():
 def mock_llm():
     """Фикстура для мока LLM с ограничением токенов."""
     llm = MagicMock(spec=LLM)
+    llm.classify_general_document_question = AsyncMock(return_value=False)
     llm.rewrite_question_from_dialogue = AsyncMock(return_value="Перефразированный вопрос")
     llm.answer_with_graph = AsyncMock(return_value="Короткий ответ.")
     return llm
@@ -99,11 +100,14 @@ class TestQueryService:
         
         await query_service.process_query(question, dialog_id, dialog_messages)
         
-        # Проверяем, что agent.run был вызван с правильными параметрами
+        query_service.llm.classify_general_document_question.assert_called_once()
+        query_service.llm.rewrite_question_from_dialogue.assert_called_once()
+        # Проверяем, что agent.run был вызван с переформулированным вопросом и флагом общего запроса
         query_service.agent.run.assert_called_once_with(
-            question,
+            "Перефразированный вопрос",
             dialog_id,
-            dialog_messages
+            dialog_messages,
+            is_general_document_question=False,
         )
     
     @pytest.mark.asyncio
@@ -132,8 +136,9 @@ class TestQueryService:
         answer = await query_service.process_query(question, dialog_id, dialog_messages)
         
         assert isinstance(answer, str)
-        # Проверяем, что история диалога была передана
+        # Проверяем, что история диалога была передана и вопрос — переформулированный
         call_args = query_service.agent.run.call_args
+        assert call_args[0][0] == "Перефразированный вопрос"
         assert call_args[0][2] == dialog_messages
 
 
@@ -167,7 +172,9 @@ class TestQueryServiceWithLimitedTokens:
         dialog_id = "test_token_limit"
         dialog_messages = []
         
-        answer = await agent.run(question, dialog_id, dialog_messages)
+        answer = await agent.run(
+            question, dialog_id, dialog_messages, is_general_document_question=False
+        )
         
         assert isinstance(answer, str)
         assert len(answer) > 0
@@ -273,6 +280,10 @@ class TestQueryServiceIntegration:
             mock_ms_class.return_value = mock_ms
             
             llm = LLM(ms=mock_ms)
+            llm.classify_general_document_question = AsyncMock(return_value=False)
+            llm.rewrite_question_from_dialogue = AsyncMock(
+                return_value="Тестовый вопрос"
+            )
             query_service = QueryService(
                 embedder=embedder,
                 qdrant=qdrant,
@@ -331,13 +342,18 @@ def query_service_with_token_limits(mock_embedder, mock_qdrant, mock_neo):
         mock_rewrite_choice = MagicMock()
         mock_rewrite_choice.message.content = "Перефразированный"
         mock_rewrite_response.choices = [mock_rewrite_choice]
-        
-        def patched_create(*args, **kwargs):
-            # Добавляем max_tokens для ограничения генерации
-            kwargs['max_tokens'] = MIN_OUTPUT_TOKENS
-            return mock_rewrite_response
-        
-        mock_client.chat.completions.create = MagicMock(side_effect=patched_create)
+
+        mock_classify_response = MagicMock()
+        mock_classify_choice = MagicMock()
+        mock_classify_choice.message.content = '{"general": false}'
+        mock_classify_response.choices = [mock_classify_choice]
+
+        mock_client.chat.completions.create = MagicMock(
+            side_effect=[
+                mock_classify_response,
+                mock_rewrite_response,
+            ]
+        )
         mock_openai_class.return_value = mock_client
         
         llm = LLM(ms=mock_ms, client=mock_client)
