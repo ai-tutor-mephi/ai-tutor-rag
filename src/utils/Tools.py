@@ -75,6 +75,37 @@ def _dedupe_chunks(chunks: List[str]) -> List[str]:
     return out
 
 
+def _dense_context_chunk_limit() -> int:
+    """Сколько чанков из dense search отдавать в текст контекста для LLM (после dedupe, по порядку релевантности)."""
+    n = int(os.getenv("RAG_DENSE_CONTEXT_MAX_CHUNKS", "4"))
+    return max(1, min(n, 50))
+
+
+def _dense_chunks_context_section(chunks: List[str]) -> str:
+    """
+    Собирает в один блок тексты чанков, найденных dense search в Qdrant.
+
+    Раньше в ответ агента попадал только контекст из Neo4j по сущностям из этих чанков;
+    если узлы в графе названы иначе или не матчятся по подстроке, формулировки из текста
+    (например, «Теорема 5») терялись — модель не могла ответить по фактам чанка.
+
+    Сюда передают уже укороченный список (см. RAG_DENSE_CONTEXT_MAX_CHUNKS в rag_tool).
+    """
+    if not chunks:
+        return ""
+    max_chars = int(os.getenv("RAG_DENSE_CHUNKS_MAX_CHARS", "80000"))
+    assembled = "\n\n---\n\n".join(chunks)
+    if len(assembled) > max_chars:
+        assembled = (
+            assembled[:max_chars]
+            + "\n\n[... фрагменты обрезаны по RAG_DENSE_CHUNKS_MAX_CHARS ...]"
+        )
+    return (
+        "[Фрагменты документов (релевантные отрывки из загруженных материалов)]\n"
+        + assembled
+    )
+
+
 def _retrieval_queries(question: str, aspects: List[str]) -> List[str]:
     """Исходный вопрос + аспекты + (для обзорных запросов) широкие тематические строки для dense search."""
     seen: set[str] = set()
@@ -121,8 +152,9 @@ async def rag_tool(question: str, dialog_id: str) -> str:
     """
     Инструмент для получения контекста из RAG системы.
     
-    Извлекает ключевые аспекты из вопроса, находит релевантные чанки
-    в векторной БД и строит графовый контекст для ответа.
+    Извлекает ключевые аспекты из вопроса, находит релевантные чанки в векторной БД,
+    передаёт в ответ тексты первых RAG_DENSE_CONTEXT_MAX_CHUNKS чанков (по умолчанию 4)
+    плюс графовый контекст из Neo4j (сущности извлекаются по всем найденным чанкам до dedupe).
     
     
     Args:
@@ -174,14 +206,33 @@ async def rag_tool(question: str, dialog_id: str) -> str:
 
     all_chunks = _dedupe_chunks(all_chunks)
 
+    chunk_limit = _dense_context_chunk_limit()
+    chunks_for_llm = all_chunks[:chunk_limit]
+    logger.info(
+        "rag_tool: в контекст LLM (фрагменты) — %s чанков (лимит %s; всего уникальных после поиска: %s)",
+        len(chunks_for_llm),
+        chunk_limit,
+        len(all_chunks),
+    )
+    chunks_section = _dense_chunks_context_section(chunks_for_llm)
+
     logger.info("Поиск по neo4j")
+    graph_text = ""
     if all_chunks:
         graph_data = await _neo.graph_context_from_chunks(all_chunks, dialog_id=dialog_id)
-        context = graph_data.get("context_text", "")
-    else:
-        context = ""
+        if graph_data:
+            graph_text = (graph_data.get("context_text") or "").strip()
 
-    return context
+    parts: List[str] = []
+    if chunks_section:
+        parts.append(chunks_section)
+    if graph_text:
+        parts.append(
+            "[Граф знаний (связи и краткие описания сущностей из ваших документов)]\n"
+            + graph_text
+        )
+
+    return "\n\n".join(parts) if parts else ""
 
 tools = [rag_tool]
 tools_by_name = {tool.name: tool for tool in tools}

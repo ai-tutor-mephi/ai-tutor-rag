@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Инициализация модели для векторизации
-model_id = "Qwen/Qwen3-Embedding-8B"
+model_id = "BAAI/bge-m3"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModel.from_pretrained(model_id)
 device = "cuda" if torch.cuda.is_available() else "cpu"
