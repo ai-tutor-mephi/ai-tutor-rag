@@ -13,6 +13,12 @@ import logging
 from ..Databases.QInteracter import QInteracter
 from ..Databases.NeoInteracter import NeoInteracter
 from ..Handling.Embedder import Embedder
+from .rag_context_helpers import (
+    dedupe_chunks as _dedupe_chunks,
+    dense_chunks_context_section,
+    dense_context_chunk_limit,
+    graph_context_header,
+)
 from .rag_request_context import is_general_document_question_cv
 
 
@@ -61,49 +67,6 @@ def _is_document_scope_question(question: str) -> bool:
         return False
     low = question.lower()
     return any(m in low for m in _DOC_SCOPE_MARKERS)
-
-
-def _dedupe_chunks(chunks: List[str]) -> List[str]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for c in chunks:
-        s = (c or "").strip()
-        if not s or s in seen:
-            continue
-        seen.add(s)
-        out.append(s)
-    return out
-
-
-def _dense_context_chunk_limit() -> int:
-    """Сколько чанков из dense search отдавать в текст контекста для LLM (после dedupe, по порядку релевантности)."""
-    n = int(os.getenv("RAG_DENSE_CONTEXT_MAX_CHUNKS", "4"))
-    return max(1, min(n, 50))
-
-
-def _dense_chunks_context_section(chunks: List[str]) -> str:
-    """
-    Собирает в один блок тексты чанков, найденных dense search в Qdrant.
-
-    Раньше в ответ агента попадал только контекст из Neo4j по сущностям из этих чанков;
-    если узлы в графе названы иначе или не матчятся по подстроке, формулировки из текста
-    (например, «Теорема 5») терялись — модель не могла ответить по фактам чанка.
-
-    Сюда передают уже укороченный список (см. RAG_DENSE_CONTEXT_MAX_CHUNKS в rag_tool).
-    """
-    if not chunks:
-        return ""
-    max_chars = int(os.getenv("RAG_DENSE_CHUNKS_MAX_CHARS", "80000"))
-    assembled = "\n\n---\n\n".join(chunks)
-    if len(assembled) > max_chars:
-        assembled = (
-            assembled[:max_chars]
-            + "\n\n[... фрагменты обрезаны по RAG_DENSE_CHUNKS_MAX_CHARS ...]"
-        )
-    return (
-        "[Фрагменты документов (релевантные отрывки из загруженных материалов)]\n"
-        + assembled
-    )
 
 
 def _retrieval_queries(question: str, aspects: List[str]) -> List[str]:
@@ -206,7 +169,7 @@ async def rag_tool(question: str, dialog_id: str) -> str:
 
     all_chunks = _dedupe_chunks(all_chunks)
 
-    chunk_limit = _dense_context_chunk_limit()
+    chunk_limit = dense_context_chunk_limit()
     chunks_for_llm = all_chunks[:chunk_limit]
     logger.info(
         "rag_tool: в контекст LLM (фрагменты) — %s чанков (лимит %s; всего уникальных после поиска: %s)",
@@ -214,7 +177,7 @@ async def rag_tool(question: str, dialog_id: str) -> str:
         chunk_limit,
         len(all_chunks),
     )
-    chunks_section = _dense_chunks_context_section(chunks_for_llm)
+    chunks_section = dense_chunks_context_section(chunks_for_llm)
 
     logger.info("Поиск по neo4j")
     graph_text = ""
@@ -227,10 +190,7 @@ async def rag_tool(question: str, dialog_id: str) -> str:
     if chunks_section:
         parts.append(chunks_section)
     if graph_text:
-        parts.append(
-            "[Граф знаний (связи и краткие описания сущностей из ваших документов)]\n"
-            + graph_text
-        )
+        parts.append(graph_context_header() + graph_text)
 
     return "\n\n".join(parts) if parts else ""
 

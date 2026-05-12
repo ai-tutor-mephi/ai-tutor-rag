@@ -19,6 +19,12 @@ from ..Databases.QInteracter import QInteracter
 from ..Databases.NeoInteracter import NeoInteracter
 from ..LLM.LLMAnswer import LLM
 from ..LLM.Agent import Agent
+from ..utils.rag_context_helpers import (
+    dedupe_chunks,
+    dense_chunks_context_section,
+    dense_context_chunk_limit,
+    graph_context_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -239,20 +245,28 @@ class QueryService:
             Объединенный графовый контекст в виде текста
         """
         logger.info("Построение графового контекста в Neo4j...")
-        
-        context = ""
+        flat: List[str] = []
         for chunks in relevant_chunks:
-            # Получаем графовый контекст для группы чанков
-            graph_data = await self.neo.graph_context_from_chunks(
-                chunks,
-                dialog_id=dialog_id
-            )
-            
-            # Извлекаем текстовое представление контекста
-            context_text = graph_data.get("context_text", "")
-            context += context_text
-        
-        return context
+            flat.extend(chunks)
+        flat = dedupe_chunks(flat)
+
+        chunk_limit = dense_context_chunk_limit()
+        chunks_for_llm = flat[:chunk_limit]
+        chunk_section = dense_chunks_context_section(chunks_for_llm)
+
+        graph_text = ""
+        if flat:
+            graph_data = await self.neo.graph_context_from_chunks(flat, dialog_id=dialog_id)
+            if graph_data:
+                graph_text = (graph_data.get("context_text") or "").strip()
+
+        parts: List[str] = []
+        if chunk_section:
+            parts.append(chunk_section)
+        if graph_text:
+            parts.append(graph_context_header() + graph_text)
+
+        return "\n\n".join(parts) if parts else ""
     
     async def _generate_answer(
         self,

@@ -19,6 +19,31 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+
+def _env_flag_true(name: str) -> bool:
+    """True, если переменная задана как 1 / true / yes / on (без учёта регистра)."""
+    v = (os.getenv(name) or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _graphrag_max_workers() -> int:
+    raw = os.getenv("MS_GRAPHRAG_MAX_WORKERS", "4").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 4
+    return max(1, min(n, 32))
+
+
+def _env_community_summary_enabled() -> bool:
+    """
+    Суммаризация комьюнити — сотни LLM-вызовов и частые 429.
+    Включите явно: MS_GRAPHRAG_ENABLE_COMMUNITY_SUMMARY=1
+    """
+    v = (os.getenv("MS_GRAPHRAG_ENABLE_COMMUNITY_SUMMARY") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 api_key = os.getenv("OPENAI_API_KEY")
 neo4j_uri = os.getenv("NEO4J_URI")
 neo4j_user = os.getenv("NEO4J_USERNAME")
@@ -35,8 +60,8 @@ driver = GraphDatabase.driver(
     auth=(neo4j_user, neo4j_password)
 )
 
-# Initialize MsGraphRAG
-ms_graph = MsGraphRAG(driver=driver, model=model)
+# Initialize MsGraphRAG (параллелизм суммаризаций — MS_GRAPHRAG_MAX_WORKERS, см. NeoInteracter.create_graph)
+ms_graph = MsGraphRAG(driver=driver, model=model, max_workers=_graphrag_max_workers())
 
 
 class NeoInteracter:
@@ -57,6 +82,11 @@ class NeoInteracter:
         Connect to Neo4j and create a graph from the given data.
         :param chunks: chunks to be added to the graph
         :return:
+
+        Переменные окружения (загрузка / индексация):
+        - MS_GRAPHRAG_SKIP_NODE_REL_SUMMARY=1 — не вызывать summarize_nodes_and_rels.
+        - MS_GRAPHRAG_ENABLE_COMMUNITY_SUMMARY=1 — включить summarize_communities (по умолчанию выключено).
+        - MS_GRAPHRAG_MAX_WORKERS — параллельные LLM-запросы при суммаризации (по умолчанию 4).
         """
 
         data = [
@@ -95,15 +125,29 @@ class NeoInteracter:
                     dialog_id=dialog_id
                 )
                 
-            # Generate summaries for nodes and relationships
-            logger.info("Генерация резюме для сущностей и связей...")
-            result = await self.ms_graph.summarize_nodes_and_rels()
-            print(result)
+            # Generate summaries for nodes and relationships (дорого по LLM; можно отключить)
+            if _env_flag_true("MS_GRAPHRAG_SKIP_NODE_REL_SUMMARY"):
+                logger.info(
+                    "Пропуск summarize_nodes_and_rels (MS_GRAPHRAG_SKIP_NODE_REL_SUMMARY=1). "
+                    "Резюме узлов/рёбер в Neo4j не строятся — графовый контекст может быть короче."
+                )
+            else:
+                logger.info("Генерация резюме для сущностей и связей...")
+                result = await self.ms_graph.summarize_nodes_and_rels()
+                logger.info("summarize_nodes_and_rels: %s", result)
+                print(result)
 
-            # Identify and summarize communities
-            logger.info("Выделение и суммаризация комьюнити...")
-            result = await self.ms_graph.summarize_communities()
-            print(result)
+            # Community detection + summarization (очень дорого; по умолчанию выключено)
+            if _env_community_summary_enabled():
+                logger.info("Выделение и суммаризация комьюнити (MS_GRAPHRAG_ENABLE_COMMUNITY_SUMMARY=1)...")
+                result = await self.ms_graph.summarize_communities()
+                logger.info("summarize_communities: %s", result)
+                print(result)
+            else:
+                logger.info(
+                    "Пропуск summarize_communities (по умолчанию). "
+                    "Чтобы включить: MS_GRAPHRAG_ENABLE_COMMUNITY_SUMMARY=1"
+                )
 
 
         except Exception as e:
